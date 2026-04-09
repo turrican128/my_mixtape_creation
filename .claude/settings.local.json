@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(pkill -f \"python -m mixtape serve\")",
+      "Bash(netstat -ano)",
+      "Bash(findstr :5000)",
+      "Bash(taskkill /F /PID 11516)",
+      "Bash(taskkill /F /PID 12576)",
+      "Bash(taskkill:*)",
+      "Bash(cmd /c \"taskkill /F /PID 11516\")",
+      "Bash(cmd /c \"taskkill /F /PID 12576\")",
+      "Bash(cmd:*)"
+    ]
+  }
+}

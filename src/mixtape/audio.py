@@ -74,18 +74,28 @@ _CURVES = [
 ]
 
 
-def _maybe_fx(rng: random.Random) -> str | None:
+def _maybe_fx(rng: random.Random, mode: str = "subtle") -> str | None:
     """
     Return a short, safe filter chain to apply on one side of a crossfade.
-    Kept intentionally subtle to avoid ruining the mix.
+    'subtle' is for dj-random, 'dynamic' is for dj-dynamic.
     """
-    choices = [
-        "highpass=f=120",
-        "lowpass=f=5500",
-        "aecho=0.6:0.3:50:0.12",
-        "aphaser=type=t:decay=0.35:speed=0.6",
-        "tremolo=f=6.5:d=0.25",
-    ]
+    if mode == "dynamic":
+        choices = [
+            "highpass=f=400",            # More aggressive bass cut
+            "lowpass=f=1000",           # Muffled/Under-water effect
+            "aecho=0.7:0.4:60:0.2",     # Stronger dub echo
+            "aphaser=type=t:decay=0.5:speed=1.2", # More intense phaser
+            "tremolo=f=10:d=0.5",       # Faster, deeper tremolo
+            "acompressor=threshold=-20dB:ratio=4", # Squashed sound
+        ]
+    else:
+        choices = [
+            "highpass=f=120",
+            "lowpass=f=5500",
+            "aecho=0.6:0.3:50:0.12",
+            "aphaser=type=t:decay=0.35:speed=0.6",
+            "tremolo=f=6.5:d=0.25",
+        ]
     return rng.choice(choices)
 
 
@@ -111,18 +121,22 @@ def _build_filter_complex(
         return rng.choice(_CURVES) if fx_mode == "dj-random" else "tri"
 
     def should_fx() -> bool:
+        if fx_mode == "dj-dynamic":
+            return rng.random() < 0.7  # Higher probability for dynamic mode
         return fx_mode == "dj-random" and (rng.random() < fx_prob)
 
     # Build transitions, optionally inserting small FX filters on either side.
     left = "a0"
     right = "a1"
     if should_fx():
-        fx = _maybe_fx(rng)
+        fx_type = "dynamic" if fx_mode == "dj-dynamic" else "subtle"
+        fx = _maybe_fx(rng, mode=fx_type)
         if fx:
             parts.append(f"[a0]{fx}[a0fx]")
             left = "a0fx"
     if should_fx():
-        fx = _maybe_fx(rng)
+        fx_type = "dynamic" if fx_mode == "dj-dynamic" else "subtle"
+        fx = _maybe_fx(rng, mode=fx_type)
         if fx:
             parts.append(f"[a1]{fx}[a1fx]")
             right = "a1fx"
@@ -131,7 +145,8 @@ def _build_filter_complex(
     for i in range(2, n):
         right = f"a{i}"
         if should_fx():
-            fx = _maybe_fx(rng)
+            fx_type = "dynamic" if fx_mode == "dj-dynamic" else "subtle"
+            fx = _maybe_fx(rng, mode=fx_type)
             if fx:
                 parts.append(f"[a{i}]{fx}[a{i}fx]")
                 right = f"a{i}fx"

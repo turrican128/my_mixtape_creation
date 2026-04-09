@@ -204,14 +204,7 @@ def create_app(input_dir: Path | None = None) -> Flask:
         return jsonify({
             "modes": [
                 {
-                    "id": "none",
-                    "name": "None (Hard Cut)",
-                    "description": "No crossfade — tracks cut directly into each other.",
-                    "has_crossfade": False,
-                    "has_fx": False,
-                },
-                {
-                    "id": "crossfade",
+                    "id": "standard",
                     "name": "Standard Crossfade",
                     "description": "Smooth overlap between consecutive tracks.",
                     "has_crossfade": True,
@@ -221,6 +214,13 @@ def create_app(input_dir: Path | None = None) -> Flask:
                     "id": "dj-random",
                     "name": "DJ Random",
                     "description": "Varied crossfade curves with occasional subtle FX.",
+                    "has_crossfade": True,
+                    "has_fx": True,
+                },
+                {
+                    "id": "dj-dynamic",
+                    "name": "DJ Dynamic",
+                    "description": "More aggressive, intentional DJ effects and varied curves.",
                     "has_crossfade": True,
                     "has_fx": True,
                 },
@@ -275,7 +275,7 @@ def create_app(input_dir: Path | None = None) -> Flask:
                 # Map fx_mode for the backend
                 # "none" and "crossfade" both use fx_mode="none" in audio.py
                 # "crossfade" just means standard crossfade (the default)
-                actual_fx_mode = "none" if fx_mode in ("none", "crossfade") else fx_mode
+                actual_fx_mode = "none" if fx_mode == "standard" else fx_mode
 
                 out_mp3 = Path("output") / "mixtape.mp3"
                 tracklist_txt = Path("output") / "tracklist.txt"
@@ -354,7 +354,7 @@ def serve_cmd(input_dir: Path, host: str, port: int) -> int:
     """Start the Mixtape web UI server."""
     _ensure_ffmpeg_on_path()
     app = create_app(input_dir=input_dir)
-    print(f"🎵 Mixtape Web UI")
+    print(f"Mixtape Web UI")
     print(f"   Input folder: {input_dir}")
     print(f"   Listening on: http://{host}:{port}")
     print()

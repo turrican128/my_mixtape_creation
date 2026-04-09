@@ -99,9 +99,6 @@ def discover_tracks(
         if missing:
             raise FileNotFoundError(f"manifest order references missing files: {missing}")
         files = [by_name[name.lower()] for name in order]
-        if missing:
-            raise FileNotFoundError(f"manifest order references missing files: {missing}")
-        files = [by_name[name] for name in order]
 
     overrides: dict[str, Any] = {}
     if "tracks" in manifest:
