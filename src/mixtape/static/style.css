@@ -528,23 +528,101 @@ input[type="range"]::-moz-range-thumb {
     font-size: 14px;
 }
 
-/* ---- Upload Section ---- */
+/* ---- Upload Trigger ---- */
 
-.upload-section {
-    margin-top: 8px;
+.upload-trigger {
+    margin-top: 12px;
 }
 
-.upload-divider {
-    height: 1px;
-    background: var(--border);
-    margin: 20px 0;
-}
-
-.upload-title {
-    font-size: 15px;
+.btn-upload {
+    background: var(--accent-dim);
+    border-color: var(--accent-dim);
+    color: #fff;
     font-weight: 600;
-    color: var(--text-secondary);
+    padding: 12px 20px;
+    font-size: 16px;
+}
+
+.btn-upload.btn-lg {
+    width: 100%;
+}
+
+.btn-upload:hover:not(:disabled) {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+
+/* ---- Upload Modal ---- */
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    width: 90%;
+    max-width: 480px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+    animation: modalIn 0.2s ease-out;
+}
+
+@keyframes modalIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95) translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px 0;
+}
+
+.modal-header h2 {
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+    transition: color var(--transition);
+}
+
+.modal-close:hover {
+    color: var(--text-primary);
+}
+
+.modal-body {
+    padding: 20px 24px;
+}
+
+.modal-body .setting-group {
     margin-bottom: 16px;
+}
+
+.modal-body .setting-group:last-child {
+    margin-bottom: 0;
 }
 
 .upload-textarea {
@@ -553,26 +631,22 @@ input[type="range"]::-moz-range-thumb {
     font-family: inherit;
 }
 
-.btn-upload {
-    background: var(--accent-dim);
-    border-color: var(--accent-dim);
-    color: #fff;
-    font-weight: 600;
-    width: 100%;
-    padding: 12px 20px;
-    font-size: 16px;
-}
-
-.btn-upload:hover:not(:disabled) {
-    background: var(--accent);
-    border-color: var(--accent);
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 0 24px 20px;
 }
 
 .upload-status {
-    margin-top: 12px;
+    padding: 0 24px 16px;
     font-size: 13px;
     color: var(--text-secondary);
-    min-height: 20px;
+    min-height: 0;
+}
+
+.upload-status:empty {
+    padding: 0;
 }
 
 .upload-status.success {

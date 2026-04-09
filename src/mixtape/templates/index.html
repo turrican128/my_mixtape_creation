@@ -52,29 +52,43 @@
                     <div class="build-status" id="build-status"></div>
                 </div>
 
-                <!-- Upload to Mixcloud (hidden until build completes) -->
-                <div class="upload-section hidden" id="upload-section">
-                    <div class="upload-divider"></div>
-                    <h3 class="upload-title">Upload to Mixcloud</h3>
-                    <div class="setting-group">
-                        <label class="setting-label" for="upload-name">Mixtape Name</label>
-                        <input type="text" id="upload-name" class="setting-input" placeholder="My Awesome Mixtape">
-                    </div>
-                    <div class="setting-group">
-                        <label class="setting-label" for="upload-description">Description</label>
-                        <textarea id="upload-description" class="setting-input upload-textarea" placeholder="Optional description..." rows="3"></textarea>
-                    </div>
-                    <div class="setting-group">
-                        <label class="setting-label" for="upload-tags">Tags <small>(comma-separated)</small></label>
-                        <input type="text" id="upload-tags" class="setting-input" placeholder="mixtape, dj, electronic">
-                    </div>
-                    <button class="btn btn-upload btn-lg" id="btn-upload">
+                <!-- Upload button (hidden until build completes + Mixcloud connected) -->
+                <div class="upload-trigger hidden" id="upload-trigger">
+                    <button class="btn btn-upload btn-lg" id="btn-show-upload">
                         ☁ Upload to Mixcloud
                     </button>
-                    <div class="upload-status" id="upload-status"></div>
                 </div>
             </aside>
         </main>
+    </div>
+
+    <!-- Upload Modal -->
+    <div class="modal-overlay hidden" id="upload-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>☁ Upload to Mixcloud</h2>
+                <button class="modal-close" id="btn-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-group">
+                    <label class="setting-label" for="upload-name">Mixtape Name</label>
+                    <input type="text" id="upload-name" class="setting-input" placeholder="My Awesome Mixtape">
+                </div>
+                <div class="setting-group">
+                    <label class="setting-label" for="upload-description">Description</label>
+                    <textarea id="upload-description" class="setting-input upload-textarea" placeholder="Tell listeners about this mix..." rows="3"></textarea>
+                </div>
+                <div class="setting-group">
+                    <label class="setting-label" for="upload-tags">Tags <small>(comma-separated)</small></label>
+                    <input type="text" id="upload-tags" class="setting-input" placeholder="mixtape, dj, electronic">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-modal-cancel">Cancel</button>
+                <button class="btn btn-upload" id="btn-upload">Upload</button>
+            </div>
+            <div class="upload-status" id="upload-status"></div>
+        </div>
     </div>
 
     <script src="{{ url_for('static', filename='app.js') }}"></script>
