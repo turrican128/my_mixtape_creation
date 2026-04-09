@@ -204,11 +204,11 @@ def create_app(input_dir: Path | None = None) -> Flask:
         return jsonify({
             "modes": [
                 {
-                    "id": "standard",
-                    "name": "Standard Crossfade",
-                    "description": "Smooth overlap between consecutive tracks.",
+                    "id": "dj-smooth",
+                    "name": "DJ Smooth",
+                    "description": "Warm, gentle FX transitions — soft phaser, ambient echo, subtle warmth.",
                     "has_crossfade": True,
-                    "has_fx": False,
+                    "has_fx": True,
                 },
                 {
                     "id": "dj-random",
@@ -272,10 +272,8 @@ def create_app(input_dir: Path | None = None) -> Flask:
                     if tr.path.name.lower() not in included:
                         ordered.append(tr)
 
-                # Map fx_mode for the backend
-                # "none" and "crossfade" both use fx_mode="none" in audio.py
-                # "crossfade" just means standard crossfade (the default)
-                actual_fx_mode = "none" if fx_mode == "standard" else fx_mode
+                # Pass fx_mode directly to the backend
+                actual_fx_mode = fx_mode
 
                 out_mp3 = Path("output") / "mixtape.mp3"
                 tracklist_txt = Path("output") / "tracklist.txt"

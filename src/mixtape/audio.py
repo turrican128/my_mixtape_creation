@@ -77,7 +77,7 @@ _CURVES = [
 def _maybe_fx(rng: random.Random, mode: str = "subtle") -> str | None:
     """
     Return a short, safe filter chain to apply on one side of a crossfade.
-    'subtle' is for dj-random, 'dynamic' is for dj-dynamic.
+    'subtle' is for dj-random, 'smooth' is for dj-smooth, 'dynamic' is for dj-dynamic.
     """
     if mode == "dynamic":
         choices = [
@@ -87,6 +87,14 @@ def _maybe_fx(rng: random.Random, mode: str = "subtle") -> str | None:
             "aphaser=type=t:decay=0.5:speed=1.2", # More intense phaser
             "tremolo=f=10:d=0.5",       # Faster, deeper tremolo
             "acompressor=threshold=-20dB:ratio=4", # Squashed sound
+        ]
+    elif mode == "smooth":
+        choices = [
+            "lowpass=f=8000",                       # Gentle high-end rolloff
+            "aecho=0.5:0.3:80:0.08",               # Warm, ambient tail
+            "aphaser=type=t:decay=0.2:speed=0.3",   # Soft, slow phaser sweep
+            "tremolo=f=3:d=0.15",                   # Gentle pulsing
+            "equalizer=f=250:t=q:w=1.5:g=2",       # Subtle warmth boost
         ]
     else:
         choices = [
@@ -117,25 +125,31 @@ def _build_filter_complex(
         parts.append("[a0]loudnorm=I=-14:LRA=11:TP=-1.5:print_format=summary[m]")
         return ";".join(parts)
 
+    _SMOOTH_CURVES = ["tri", "qsin", "hsin", "esin"]
+
     def pick_curve() -> str:
-        return rng.choice(_CURVES) if fx_mode == "dj-random" else "tri"
+        if fx_mode == "dj-smooth":
+            return rng.choice(_SMOOTH_CURVES)
+        return rng.choice(_CURVES) if fx_mode in ("dj-random", "dj-dynamic") else "tri"
 
     def should_fx() -> bool:
         if fx_mode == "dj-dynamic":
-            return rng.random() < 0.7  # Higher probability for dynamic mode
+            return rng.random() < 0.7
+        if fx_mode == "dj-smooth":
+            return rng.random() < 0.5
         return fx_mode == "dj-random" and (rng.random() < fx_prob)
 
     # Build transitions, optionally inserting small FX filters on either side.
     left = "a0"
     right = "a1"
     if should_fx():
-        fx_type = "dynamic" if fx_mode == "dj-dynamic" else "subtle"
+        fx_type = {"dj-dynamic": "dynamic", "dj-smooth": "smooth"}.get(fx_mode, "subtle")
         fx = _maybe_fx(rng, mode=fx_type)
         if fx:
             parts.append(f"[a0]{fx}[a0fx]")
             left = "a0fx"
     if should_fx():
-        fx_type = "dynamic" if fx_mode == "dj-dynamic" else "subtle"
+        fx_type = {"dj-dynamic": "dynamic", "dj-smooth": "smooth"}.get(fx_mode, "subtle")
         fx = _maybe_fx(rng, mode=fx_type)
         if fx:
             parts.append(f"[a1]{fx}[a1fx]")
@@ -145,7 +159,7 @@ def _build_filter_complex(
     for i in range(2, n):
         right = f"a{i}"
         if should_fx():
-            fx_type = "dynamic" if fx_mode == "dj-dynamic" else "subtle"
+            fx_type = {"dj-dynamic": "dynamic", "dj-smooth": "smooth"}.get(fx_mode, "subtle")
             fx = _maybe_fx(rng, mode=fx_type)
             if fx:
                 parts.append(f"[a{i}]{fx}[a{i}fx]")
