@@ -8,6 +8,7 @@ __pycache__/
 .mypy_cache/
 *.log
 .mixcloud_token.json
+.mixtape_config.json
 
 # Local source tracks (large binaries); add your own files here after clone
 Music for mixtape/*

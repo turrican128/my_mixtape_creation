@@ -528,6 +528,118 @@ input[type="range"]::-moz-range-thumb {
     font-size: 14px;
 }
 
+/* ---- Upload Section ---- */
+
+.upload-section {
+    margin-top: 8px;
+}
+
+.upload-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 20px 0;
+}
+
+.upload-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+}
+
+.upload-textarea {
+    resize: vertical;
+    min-height: 60px;
+    font-family: inherit;
+}
+
+.btn-upload {
+    background: var(--accent-dim);
+    border-color: var(--accent-dim);
+    color: #fff;
+    font-weight: 600;
+    width: 100%;
+    padding: 12px 20px;
+    font-size: 16px;
+}
+
+.btn-upload:hover:not(:disabled) {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+
+.upload-status {
+    margin-top: 12px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    min-height: 20px;
+}
+
+.upload-status.success {
+    color: var(--green);
+}
+
+.upload-status.error {
+    color: var(--red);
+}
+
+.upload-status.building {
+    color: var(--orange);
+}
+
+.upload-link {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
+.upload-link:hover {
+    color: var(--accent-hover);
+}
+
+/* ---- Settings: Mixcloud ---- */
+
+.settings-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 28px 0 20px;
+}
+
+.settings-section-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 16px;
+}
+
+.mixcloud-connect-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.mixcloud-status {
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.mixcloud-status.connected {
+    color: var(--green);
+}
+
+.mixcloud-status.not-connected {
+    color: var(--text-muted);
+}
+
+.mixcloud-status.pending {
+    color: var(--orange);
+}
+
+.mixcloud-status.error {
+    color: var(--red);
+}
+
 /* ---- Utility ---- */
 
 .hidden {

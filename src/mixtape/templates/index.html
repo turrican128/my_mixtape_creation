@@ -43,13 +43,35 @@
                 </div>
             </section>
 
-            <!-- Build section -->
+            <!-- Build & Upload section -->
             <aside class="build-panel">
                 <div class="build-section">
                     <button class="btn btn-primary btn-lg" id="btn-build" disabled>
                         ⚡ Build Mixtape
                     </button>
                     <div class="build-status" id="build-status"></div>
+                </div>
+
+                <!-- Upload to Mixcloud (hidden until build completes) -->
+                <div class="upload-section hidden" id="upload-section">
+                    <div class="upload-divider"></div>
+                    <h3 class="upload-title">Upload to Mixcloud</h3>
+                    <div class="setting-group">
+                        <label class="setting-label" for="upload-name">Mixtape Name</label>
+                        <input type="text" id="upload-name" class="setting-input" placeholder="My Awesome Mixtape">
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label" for="upload-description">Description</label>
+                        <textarea id="upload-description" class="setting-input upload-textarea" placeholder="Optional description..." rows="3"></textarea>
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label" for="upload-tags">Tags <small>(comma-separated)</small></label>
+                        <input type="text" id="upload-tags" class="setting-input" placeholder="mixtape, dj, electronic">
+                    </div>
+                    <button class="btn btn-upload btn-lg" id="btn-upload">
+                        ☁ Upload to Mixcloud
+                    </button>
+                    <div class="upload-status" id="upload-status"></div>
                 </div>
             </aside>
         </main>
