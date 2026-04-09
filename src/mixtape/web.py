@@ -354,8 +354,15 @@ def create_app(input_dir: Path | None = None) -> Flask:
     def api_settings_put():
         data = request.get_json(force=True)
         if "crossfade_s" in data:
-            _settings["crossfade_s"] = float(data["crossfade_s"])
+            val = float(data["crossfade_s"])
+            if val < 0.5:
+                return jsonify({"error": "crossfade_s must be >= 0.5"}), 400
+            _settings["crossfade_s"] = val
         if "parse_style" in data:
+            try:
+                TrackParseStyle(data["parse_style"])
+            except ValueError:
+                return jsonify({"error": "Invalid parse_style"}), 400
             _settings["parse_style"] = data["parse_style"]
         return jsonify(_settings)
 
