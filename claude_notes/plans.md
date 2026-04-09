@@ -3,6 +3,9 @@
 ## Current State
 - CLI tool is functional for building mixes with crossfades and uploading to Mixcloud
 - Web UI (Flask) added for visual track management and triggering builds from the browser
+- Three FX modes available: DJ Smooth, DJ Random, DJ Dynamic (no plain crossfade option)
+- `serve` subcommand launches the web UI (`mixtape serve`)
+- Output goes to `output/` directory (previously `dist/`, now removed)
 - No tests, no linter, no CI/CD
 
 ## Known Gaps

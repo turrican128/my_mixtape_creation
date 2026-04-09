@@ -118,16 +118,10 @@ body {
 /* ---- Main Layout ---- */
 
 .main {
-    display: grid;
-    grid-template-columns: 1fr 320px;
+    display: flex;
+    flex-direction: column;
     gap: 24px;
     padding-bottom: 48px;
-}
-
-@media (max-width: 800px) {
-    .main {
-        grid-template-columns: 1fr;
-    }
 }
 
 /* ---- Track Panel ---- */
@@ -229,25 +223,79 @@ body {
     white-space: nowrap;
 }
 
-/* ---- Settings Panel ---- */
+/* ---- Transition Dropdown (between tracks) ---- */
 
-.settings-panel {
+.track-transition {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 0;
+}
+
+.transition-select {
+    padding: 3px 8px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-size: 11px;
+    cursor: pointer;
+    outline: none;
+    transition: border-color var(--transition), color var(--transition);
+}
+
+.transition-select:hover {
+    border-color: var(--border-light);
+    color: var(--text-secondary);
+}
+
+.transition-select:focus {
+    border-color: var(--accent-dim);
+    color: var(--text-primary);
+}
+
+.transition-select option {
+    background: var(--bg-secondary);
+}
+
+/* ---- Build Panel ---- */
+
+.build-panel {
+    display: flex;
+    justify-content: center;
+    padding: 20px 0;
+}
+
+/* ---- Settings Page ---- */
+
+.settings-main {
+    max-width: 480px;
+    padding: 24px 0 48px;
+}
+
+.settings-form {
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 20px;
-    height: fit-content;
-    position: sticky;
-    top: 24px;
+    padding: 24px;
 }
 
-.settings-panel h2 {
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-bottom: 20px;
+.setting-help {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 6px;
+}
+
+.settings-status {
+    margin-top: 16px;
+    font-size: 13px;
+    color: var(--text-muted);
+    text-align: center;
+    min-height: 20px;
+}
+
+.settings-status.saved {
+    color: var(--green);
 }
 
 .setting-group {

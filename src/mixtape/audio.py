@@ -80,6 +80,7 @@ def _build_filter_complex(
     fx_mode: str,
     fx_prob: float,
     fx_seed: int | None,
+    transition_modes: list[str] | None = None,
 ) -> str:
     # Each input: [i:a]aformat -> [ai]
     # Then chain acrossfade: [a0][a1]acrossfade=d=... -> [x1], etc.
@@ -95,16 +96,23 @@ def _build_filter_complex(
 
     _SMOOTH_CURVES = ["tri", "qsin", "hsin", "esin"]
 
-    def pick_curve() -> str:
-        if fx_mode == "dj-smooth":
+    def pick_curve(mode: str) -> str:
+        if mode == "dj-smooth":
             return rng.choice(_SMOOTH_CURVES)
-        return rng.choice(_CURVES) if fx_mode in ("dj-random", "dj-dynamic") else "tri"
+        return rng.choice(_CURVES) if mode in ("dj-random", "dj-dynamic") else "tri"
 
-    # First transition
-    parts.append(f"[a0][a1]acrossfade=d={crossfade_s}:c1={pick_curve()}:c2={pick_curve()}[x1]")
+    def _get_mode(transition_idx: int) -> str:
+        if transition_modes and transition_idx < len(transition_modes):
+            return transition_modes[transition_idx]
+        return fx_mode
+
+    # First transition — curve-only, no FX filters on tracks
+    mode_0 = _get_mode(0)
+    parts.append(f"[a0][a1]acrossfade=d={crossfade_s}:c1={pick_curve(mode_0)}:c2={pick_curve(mode_0)}[x1]")
 
     for i in range(2, n):
-        parts.append(f"[x{i-1}][a{i}]acrossfade=d={crossfade_s}:c1={pick_curve()}:c2={pick_curve()}[x{i}]")
+        mode_i = _get_mode(i - 1)
+        parts.append(f"[x{i-1}][a{i}]acrossfade=d={crossfade_s}:c1={pick_curve(mode_i)}:c2={pick_curve(mode_i)}[x{i}]")
     parts.append(f"[x{n-1}]loudnorm=I=-14:LRA=11:TP=-1.5:print_format=summary[m]")
     return ";".join(parts)
 
@@ -122,6 +130,7 @@ def build_mix(
     tracklist_json_path: Path,
     first_track: str | None,
     dry_run: bool,
+    transition_modes: list[str] | None = None,
 ) -> int:
     tracks = discover_tracks(
         input_dir=input_dir,
@@ -152,6 +161,7 @@ def build_mix(
         fx_mode=fx_mode,
         fx_prob=fx_prob,
         fx_seed=fx_seed,
+        transition_modes=transition_modes,
     )
     cmd += [
         "-filter_complex",

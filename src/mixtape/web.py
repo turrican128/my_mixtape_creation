@@ -22,6 +22,14 @@ from .audio import build_mix, probe_duration_seconds
 _build_jobs: dict[str, dict[str, Any]] = {}
 
 # ---------------------------------------------------------------------------
+# Global settings (in-process; fine for single-user desktop tool)
+# ---------------------------------------------------------------------------
+_settings: dict[str, Any] = {
+    "crossfade_s": 6.0,
+    "parse_style": "artist-dash-title",
+}
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -92,7 +100,7 @@ def create_app(input_dir: Path | None = None) -> Flask:
     @app.route("/api/tracks", methods=["GET"])
     def api_tracks():
         input_dir: Path = app.config["INPUT_DIR"]
-        parse_style = TrackParseStyle(request.args.get("parse_style", "artist-dash-title"))
+        parse_style = TrackParseStyle(_settings["parse_style"])
 
         try:
             tracks = discover_tracks(
@@ -118,7 +126,7 @@ def create_app(input_dir: Path | None = None) -> Flask:
                 probed.append(tr)
 
         # Only compute start times if all durations are available
-        crossfade_s = float(request.args.get("crossfade", 6.0))
+        crossfade_s = _settings["crossfade_s"]
         if all(tr.duration_s is not None for tr in probed):
             with_starts = compute_start_times(probed, crossfade_s=crossfade_s)
             total = _compute_total_duration(with_starts, crossfade_s)
@@ -144,8 +152,8 @@ def create_app(input_dir: Path | None = None) -> Flask:
     def api_tracks_reorder():
         data = request.get_json(force=True)
         ordered_files: list[str] = data.get("order", [])
-        crossfade_s = float(data.get("crossfade", 6.0))
-        parse_style = TrackParseStyle(data.get("parse_style", "artist-dash-title"))
+        crossfade_s = _settings["crossfade_s"]
+        parse_style = TrackParseStyle(_settings["parse_style"])
         input_dir: Path = app.config["INPUT_DIR"]
 
         try:
@@ -204,6 +212,13 @@ def create_app(input_dir: Path | None = None) -> Flask:
         return jsonify({
             "modes": [
                 {
+                    "id": "default",
+                    "name": "Default",
+                    "description": "Simple fade-out / fade-in crossfade with no effects.",
+                    "has_crossfade": True,
+                    "has_fx": False,
+                },
+                {
                     "id": "dj-smooth",
                     "name": "DJ Smooth",
                     "description": "Warm, gentle FX transitions — soft phaser, ambient echo, subtle warmth.",
@@ -235,11 +250,12 @@ def create_app(input_dir: Path | None = None) -> Flask:
     def api_build():
         data = request.get_json(force=True)
         order: list[str] = data.get("order", [])
-        crossfade_s = float(data.get("crossfade", 6.0))
-        fx_mode = data.get("fx_mode", "none")
+        crossfade_s = _settings["crossfade_s"]
+        transition_modes: list[str] = data.get("transitions", [])
+        fx_mode = data.get("fx_mode", "default")
         fx_prob = float(data.get("fx_prob", 0.35))
         fx_seed = data.get("fx_seed")
-        parse_style = TrackParseStyle(data.get("parse_style", "artist-dash-title"))
+        parse_style = TrackParseStyle(_settings["parse_style"])
         input_dir: Path = app.config["INPUT_DIR"]
 
         job_id = str(uuid.uuid4())[:8]
@@ -272,9 +288,6 @@ def create_app(input_dir: Path | None = None) -> Flask:
                     if tr.path.name.lower() not in included:
                         ordered.append(tr)
 
-                # Pass fx_mode directly to the backend
-                actual_fx_mode = fx_mode
-
                 out_mp3 = Path("output") / "mixtape.mp3"
                 tracklist_txt = Path("output") / "tracklist.txt"
                 tracklist_json = Path("output") / "tracklist.json"
@@ -285,7 +298,7 @@ def create_app(input_dir: Path | None = None) -> Flask:
                     input_dir=input_dir,
                     out_mp3=out_mp3,
                     crossfade_s=crossfade_s,
-                    fx_mode=actual_fx_mode,
+                    fx_mode=fx_mode,
                     fx_prob=fx_prob,
                     fx_seed=int(fx_seed) if fx_seed is not None else None,
                     manifest_path=None,
@@ -294,6 +307,7 @@ def create_app(input_dir: Path | None = None) -> Flask:
                     tracklist_json_path=tracklist_json,
                     first_track=order[0] if order else None,
                     dry_run=False,
+                    transition_modes=transition_modes if transition_modes else None,
                 )
 
                 if rc == 0:
@@ -319,6 +333,38 @@ def create_app(input_dir: Path | None = None) -> Flask:
         if not job:
             return jsonify({"error": "Unknown job"}), 404
         return jsonify(job)
+
+    # ------------------------------------------------------------------
+    # Settings page
+    # ------------------------------------------------------------------
+
+    @app.route("/settings")
+    def settings_page():
+        return render_template("settings.html")
+
+    # ------------------------------------------------------------------
+    # API: Settings
+    # ------------------------------------------------------------------
+
+    @app.route("/api/settings", methods=["GET"])
+    def api_settings_get():
+        return jsonify(_settings)
+
+    @app.route("/api/settings", methods=["PUT"])
+    def api_settings_put():
+        data = request.get_json(force=True)
+        if "crossfade_s" in data:
+            val = float(data["crossfade_s"])
+            if val < 0.5:
+                return jsonify({"error": "crossfade_s must be >= 0.5"}), 400
+            _settings["crossfade_s"] = val
+        if "parse_style" in data:
+            try:
+                TrackParseStyle(data["parse_style"])
+            except ValueError:
+                return jsonify({"error": "Invalid parse_style"}), 400
+            _settings["parse_style"] = data["parse_style"]
+        return jsonify(_settings)
 
     return app
 
