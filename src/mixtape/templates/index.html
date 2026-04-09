@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎵 Mixtape Creator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
+</head>
+<body>
+    <div class="app">
+        <!-- Warning banner -->
+        <div class="warning-banner hidden" id="warning-banner">
+            <span class="warning-icon">⚠️</span>
+            <span id="warning-text"></span>
+        </div>
+
+        <!-- Header -->
+        <header class="header">
+            <div class="header-title">
+                <span class="header-icon">🎵</span>
+                <h1>Mixtape Creator</h1>
+            </div>
+            <div class="header-info" id="header-info">
+                <span class="total-duration" id="total-duration">--:--</span>
+                <span class="track-count" id="track-count">0 tracks</span>
+            </div>
+        </header>
+
+        <!-- Main content -->
+        <main class="main">
+            <!-- Track list panel -->
+            <section class="track-panel">
+                <div class="panel-header">
+                    <h2>Tracks</h2>
+                    <button class="btn btn-sm btn-secondary" id="btn-refresh" title="Rescan folder">
+                        ↻ Refresh
+                    </button>
+                </div>
+                <div class="track-list" id="track-list">
+                    <div class="loading" id="loading">Loading tracks…</div>
+                </div>
+            </section>
+
+            <!-- Settings panel -->
+            <aside class="settings-panel">
+                <h2>Settings</h2>
+
+                <!-- Transition mode -->
+                <div class="setting-group">
+                    <label class="setting-label" for="transition-mode">Transition Mode</label>
+                    <select id="transition-mode" class="setting-select">
+                        <option value="none">None (Hard Cut)</option>
+                        <option value="crossfade" selected>Standard Crossfade</option>
+                        <option value="dj-random">DJ Random</option>
+                    </select>
+                </div>
+
+                <!-- Crossfade duration -->
+                <div class="setting-group" id="crossfade-group">
+                    <label class="setting-label" for="crossfade-duration">
+                        Crossfade Duration
+                        <span class="setting-value" id="crossfade-value">6.0s</span>
+                    </label>
+                    <input type="range" id="crossfade-duration" min="0" max="15" step="0.5" value="6">
+                </div>
+
+                <!-- FX probability (DJ Random only) -->
+                <div class="setting-group hidden" id="fx-prob-group">
+                    <label class="setting-label" for="fx-prob">
+                        FX Probability
+                        <span class="setting-value" id="fx-prob-value">0.35</span>
+                    </label>
+                    <input type="range" id="fx-prob" min="0" max="1" step="0.05" value="0.35">
+                </div>
+
+                <!-- FX seed (DJ Random only) -->
+                <div class="setting-group hidden" id="fx-seed-group">
+                    <label class="setting-label" for="fx-seed">
+                        FX Seed <small>(optional, for reproducibility)</small>
+                    </label>
+                    <input type="number" id="fx-seed" class="setting-input" placeholder="Random">
+                </div>
+
+                <!-- Parse style -->
+                <div class="setting-group">
+                    <label class="setting-label" for="parse-style">Filename Parsing</label>
+                    <select id="parse-style" class="setting-select">
+                        <option value="artist-dash-title">Artist – Title (split on " - ")</option>
+                        <option value="filename-only">Filename only</option>
+                    </select>
+                </div>
+
+                <!-- Build button -->
+                <div class="setting-group build-section">
+                    <button class="btn btn-primary btn-lg" id="btn-build" disabled>
+                        ⚡ Build Mixtape
+                    </button>
+                    <div class="build-status" id="build-status"></div>
+                </div>
+            </aside>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
