@@ -12,6 +12,7 @@
     let transitionModes = {}; // keyed by track filename -> mode for transition after that track
     let currentJobId = null;
     let pollTimer = null;
+    let mixcloudConnected = false;
 
     // ----------------------------------------------------------------
     // DOM references
@@ -246,6 +247,7 @@
                     $buildStatus.className = "build-status success";
                     $btnBuild.disabled = false;
                     $btnBuild.textContent = "⚡ Build Mixtape";
+                    showUploadSection();
                 } else if (data.status === "error") {
                     clearInterval(pollTimer);
                     $buildStatus.textContent = `Error: ${data.error}`;
@@ -261,6 +263,97 @@
                 $btnBuild.textContent = "⚡ Build Mixtape";
             }
         }, 1500);
+    }
+
+    // ----------------------------------------------------------------
+    // Mixcloud Upload
+    // ----------------------------------------------------------------
+    const $uploadSection = document.getElementById("upload-section");
+    const $uploadName = document.getElementById("upload-name");
+    const $uploadDescription = document.getElementById("upload-description");
+    const $uploadTags = document.getElementById("upload-tags");
+    const $btnUpload = document.getElementById("btn-upload");
+    const $uploadStatus = document.getElementById("upload-status");
+
+    async function checkMixcloudConnection() {
+        try {
+            const data = await api("/api/mixcloud/status");
+            mixcloudConnected = data.connected;
+        } catch {
+            mixcloudConnected = false;
+        }
+    }
+
+    function showUploadSection() {
+        if (!mixcloudConnected || !$uploadSection) return;
+        $uploadSection.classList.remove("hidden");
+    }
+
+    async function uploadToMixcloud() {
+        const name = $uploadName.value.trim();
+        if (!name) {
+            $uploadStatus.textContent = "Please enter a mixtape name.";
+            $uploadStatus.className = "upload-status error";
+            return;
+        }
+
+        const tagsRaw = $uploadTags.value.trim();
+        const tags = tagsRaw ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean) : [];
+
+        $btnUpload.disabled = true;
+        $btnUpload.textContent = "⏳ Uploading…";
+        $uploadStatus.textContent = "Starting upload...";
+        $uploadStatus.className = "upload-status building";
+
+        try {
+            const data = await api("/api/mixcloud/upload", {
+                method: "POST",
+                body: JSON.stringify({
+                    name,
+                    description: $uploadDescription.value.trim(),
+                    tags,
+                }),
+            });
+            pollUploadStatus(data.job_id);
+        } catch (err) {
+            $uploadStatus.textContent = `Error: ${err.message}`;
+            $uploadStatus.className = "upload-status error";
+            $btnUpload.disabled = false;
+            $btnUpload.textContent = "☁ Upload to Mixcloud";
+        }
+    }
+
+    function pollUploadStatus(jobId) {
+        const timer = setInterval(async () => {
+            try {
+                const data = await api(`/api/mixcloud/upload/status/${jobId}`);
+                if (data.status === "uploading") {
+                    $uploadStatus.textContent = data.progress || "Uploading…";
+                } else if (data.status === "done") {
+                    clearInterval(timer);
+                    if (data.mixcloud_url) {
+                        $uploadStatus.innerHTML = `Upload complete! <a href="${data.mixcloud_url}" target="_blank" class="upload-link">View on Mixcloud</a>`;
+                    } else {
+                        $uploadStatus.textContent = "Upload complete!";
+                    }
+                    $uploadStatus.className = "upload-status success";
+                    $btnUpload.disabled = false;
+                    $btnUpload.textContent = "☁ Upload to Mixcloud";
+                } else if (data.status === "error") {
+                    clearInterval(timer);
+                    $uploadStatus.textContent = `Error: ${data.error}`;
+                    $uploadStatus.className = "upload-status error";
+                    $btnUpload.disabled = false;
+                    $btnUpload.textContent = "☁ Upload to Mixcloud";
+                }
+            } catch (err) {
+                clearInterval(timer);
+                $uploadStatus.textContent = `Polling error: ${err.message}`;
+                $uploadStatus.className = "upload-status error";
+                $btnUpload.disabled = false;
+                $btnUpload.textContent = "☁ Upload to Mixcloud";
+            }
+        }, 2000);
     }
 
     // ----------------------------------------------------------------
@@ -286,9 +379,11 @@
     // ----------------------------------------------------------------
     $btnRefresh.addEventListener("click", loadTracks);
     $btnBuild.addEventListener("click", buildMixtape);
+    if ($btnUpload) $btnUpload.addEventListener("click", uploadToMixcloud);
 
     // ----------------------------------------------------------------
     // Initialize
     // ----------------------------------------------------------------
+    checkMixcloudConnection();
     loadTracks();
 })();

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import json
 import os
+import secrets
 import threading
+import urllib.parse
 import uuid
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, jsonify, render_template, request
+import requests as http_requests
+from flask import Flask, jsonify, redirect, render_template, request
 
 from .tracklist import (
     Track,
@@ -22,12 +26,37 @@ from .audio import build_mix, probe_duration_seconds
 _build_jobs: dict[str, dict[str, Any]] = {}
 
 # ---------------------------------------------------------------------------
+# Upload-job registry (same pattern as build jobs)
+# ---------------------------------------------------------------------------
+_upload_jobs: dict[str, dict[str, Any]] = {}
+
+# ---------------------------------------------------------------------------
+# Config file for persistent settings (credentials, etc.)
+# ---------------------------------------------------------------------------
+_CONFIG_PATH = Path(".mixtape_config.json")
+
+def _load_config() -> dict[str, Any]:
+    if _CONFIG_PATH.exists():
+        return json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
+    return {}
+
+def _save_config(data: dict[str, Any]) -> None:
+    _CONFIG_PATH.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+# ---------------------------------------------------------------------------
 # Global settings (in-process; fine for single-user desktop tool)
 # ---------------------------------------------------------------------------
+_config = _load_config()
 _settings: dict[str, Any] = {
     "crossfade_s": 6.0,
     "parse_style": "artist-dash-title",
+    "mixcloud_client_id": _config.get("mixcloud_client_id", ""),
+    "mixcloud_client_secret": _config.get("mixcloud_client_secret", ""),
+    "mixcloud_access_token": _config.get("mixcloud_access_token", ""),
 }
+
+# Transient OAuth state (not persisted)
+_oauth_state: str = ""
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -364,7 +393,177 @@ def create_app(input_dir: Path | None = None) -> Flask:
             except ValueError:
                 return jsonify({"error": "Invalid parse_style"}), 400
             _settings["parse_style"] = data["parse_style"]
+        # Mixcloud credentials
+        if "mixcloud_client_id" in data:
+            _settings["mixcloud_client_id"] = str(data["mixcloud_client_id"]).strip()
+        if "mixcloud_client_secret" in data:
+            _settings["mixcloud_client_secret"] = str(data["mixcloud_client_secret"]).strip()
+        # Persist Mixcloud fields to config file
+        _save_config({
+            "mixcloud_client_id": _settings["mixcloud_client_id"],
+            "mixcloud_client_secret": _settings["mixcloud_client_secret"],
+            "mixcloud_access_token": _settings["mixcloud_access_token"],
+        })
         return jsonify(_settings)
+
+    # ------------------------------------------------------------------
+    # API: Mixcloud OAuth
+    # ------------------------------------------------------------------
+
+    @app.route("/api/mixcloud/auth", methods=["GET"])
+    def api_mixcloud_auth():
+        global _oauth_state
+        client_id = _settings.get("mixcloud_client_id", "")
+        if not client_id:
+            return jsonify({"error": "Set your Mixcloud Client ID in Settings first"}), 400
+        _oauth_state = secrets.token_urlsafe(16)
+        port = request.host.split(":")[-1] if ":" in request.host else "5050"
+        redirect_uri = f"http://localhost:{port}/api/mixcloud/callback"
+        auth_url = "https://www.mixcloud.com/oauth/authorize?" + urllib.parse.urlencode({
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "state": _oauth_state,
+        })
+        return jsonify({"auth_url": auth_url})
+
+    @app.route("/api/mixcloud/callback", methods=["GET"])
+    def api_mixcloud_callback():
+        global _oauth_state
+        code = request.args.get("code", "")
+        state = request.args.get("state", "")
+        if not code or state != _oauth_state:
+            return "Invalid or expired OAuth state. Please try connecting again from Settings.", 400
+        _oauth_state = ""
+        client_id = _settings.get("mixcloud_client_id", "")
+        client_secret = _settings.get("mixcloud_client_secret", "")
+        port = request.host.split(":")[-1] if ":" in request.host else "5050"
+        redirect_uri = f"http://localhost:{port}/api/mixcloud/callback"
+        try:
+            r = http_requests.post(
+                "https://www.mixcloud.com/oauth/access_token",
+                data={
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "redirect_uri": redirect_uri,
+                    "code": code,
+                },
+                timeout=60,
+            )
+            r.raise_for_status()
+            token_data = r.json()
+            access_token = token_data.get("access_token", "")
+            if not access_token:
+                return f"Mixcloud did not return an access token. Response: {token_data}", 400
+        except Exception as exc:
+            return f"Failed to exchange code for token: {exc}", 500
+        _settings["mixcloud_access_token"] = access_token
+        _save_config({
+            "mixcloud_client_id": _settings["mixcloud_client_id"],
+            "mixcloud_client_secret": _settings["mixcloud_client_secret"],
+            "mixcloud_access_token": access_token,
+        })
+        return (
+            "<html><body style='font-family:sans-serif;text-align:center;padding:60px;background:#0d1117;color:#e6edf3'>"
+            "<h2 style='color:#3fb950'>Connected to Mixcloud!</h2>"
+            "<p>You can close this tab and return to the app.</p>"
+            "</body></html>"
+        )
+
+    @app.route("/api/mixcloud/status", methods=["GET"])
+    def api_mixcloud_status():
+        return jsonify({
+            "connected": bool(_settings.get("mixcloud_access_token")),
+            "has_credentials": bool(_settings.get("mixcloud_client_id") and _settings.get("mixcloud_client_secret")),
+        })
+
+    # ------------------------------------------------------------------
+    # API: Mixcloud Upload
+    # ------------------------------------------------------------------
+
+    @app.route("/api/mixcloud/upload", methods=["POST"])
+    def api_mixcloud_upload():
+        access_token = _settings.get("mixcloud_access_token", "")
+        if not access_token:
+            return jsonify({"error": "Not connected to Mixcloud. Go to Settings to connect."}), 400
+        data = request.get_json(force=True)
+        name = data.get("name", "").strip()
+        if not name:
+            return jsonify({"error": "Mixtape name is required"}), 400
+        description = data.get("description", "")
+        tags: list[str] = data.get("tags", [])
+
+        mp3_path = Path("output") / "mixtape.mp3"
+        tracklist_json_path = Path("output") / "tracklist.json"
+        if not mp3_path.exists():
+            return jsonify({"error": "No built mixtape found. Build one first."}), 400
+
+        job_id = str(uuid.uuid4())[:8]
+        _upload_jobs[job_id] = {
+            "status": "uploading",
+            "progress": "Starting upload...",
+            "error": None,
+            "mixcloud_url": None,
+        }
+
+        def _run_upload():
+            try:
+                _upload_jobs[job_id]["progress"] = "Preparing upload data..."
+                url = f"https://api.mixcloud.com/upload/?access_token={urllib.parse.quote(access_token)}"
+                form_data: dict[str, str] = {
+                    "name": name,
+                    "description": description,
+                    "percentage_music": "100",
+                }
+                for i, tag in enumerate(tags[:20]):
+                    if tag.strip():
+                        form_data[f"tags-{i}-tag"] = tag.strip()
+                # Add track sections from tracklist
+                if tracklist_json_path.exists():
+                    tracks = json.loads(tracklist_json_path.read_text(encoding="utf-8"))
+                    if isinstance(tracks, list):
+                        for i, tr in enumerate(tracks[:500]):
+                            artist = str(tr.get("artist", "") or "")
+                            song = str(tr.get("title", "") or tr.get("song", "") or "")
+                            start_time = tr.get("start_time_s", tr.get("start_time", 0))
+                            try:
+                                start_i = int(float(start_time))
+                            except Exception:
+                                start_i = 0
+                            if artist:
+                                form_data[f"sections-{i}-artist"] = artist
+                            if song:
+                                form_data[f"sections-{i}-song"] = song
+                            form_data[f"sections-{i}-start_time"] = str(start_i)
+
+                _upload_jobs[job_id]["progress"] = "Uploading to Mixcloud..."
+                with mp3_path.open("rb") as f:
+                    files = {"mp3": (mp3_path.name, f, "audio/mpeg")}
+                    r = http_requests.post(url, data=form_data, files=files, timeout=60 * 30)
+                r.raise_for_status()
+                resp = r.json()
+                result_url = resp.get("result", {}).get("key", "")
+                if result_url:
+                    mixcloud_url = f"https://www.mixcloud.com{result_url}"
+                else:
+                    mixcloud_url = ""
+                _upload_jobs[job_id]["status"] = "done"
+                _upload_jobs[job_id]["progress"] = "Upload complete!"
+                _upload_jobs[job_id]["mixcloud_url"] = mixcloud_url
+            except Exception as exc:
+                _upload_jobs[job_id]["status"] = "error"
+                _upload_jobs[job_id]["error"] = str(exc)
+
+        thread = threading.Thread(target=_run_upload, daemon=True)
+        thread.start()
+        return jsonify({"job_id": job_id})
+
+    @app.route("/api/mixcloud/upload/status/<job_id>", methods=["GET"])
+    def api_mixcloud_upload_status(job_id: str):
+        job = _upload_jobs.get(job_id)
+        if not job:
+            return jsonify({"error": "Unknown job"}), 404
+        return jsonify(job)
 
     return app
 

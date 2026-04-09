@@ -44,6 +44,28 @@
 
                 <!-- Save status -->
                 <div class="settings-status" id="settings-status"></div>
+
+                <!-- Mixcloud section -->
+                <div class="settings-divider"></div>
+                <h3 class="settings-section-title">Mixcloud</h3>
+
+                <div class="setting-group">
+                    <label class="setting-label" for="mixcloud-client-id">Client ID</label>
+                    <input type="text" id="mixcloud-client-id" class="setting-input" placeholder="Your Mixcloud Client ID">
+                </div>
+
+                <div class="setting-group">
+                    <label class="setting-label" for="mixcloud-client-secret">Client Secret</label>
+                    <input type="password" id="mixcloud-client-secret" class="setting-input" placeholder="Your Mixcloud Client Secret">
+                </div>
+
+                <div class="setting-group">
+                    <div class="mixcloud-connect-row">
+                        <button class="btn btn-primary" id="btn-mixcloud-connect" disabled>Connect to Mixcloud</button>
+                        <span class="mixcloud-status" id="mixcloud-status"></span>
+                    </div>
+                    <p class="setting-help">Authorize this app to upload mixtapes to your Mixcloud account</p>
+                </div>
             </div>
         </main>
     </div>
@@ -53,6 +75,10 @@
         const crossfadeValue = document.getElementById('crossfade-value');
         const parseStyleSelect = document.getElementById('parse-style');
         const statusEl = document.getElementById('settings-status');
+        const clientIdInput = document.getElementById('mixcloud-client-id');
+        const clientSecretInput = document.getElementById('mixcloud-client-secret');
+        const connectBtn = document.getElementById('btn-mixcloud-connect');
+        const mixcloudStatusEl = document.getElementById('mixcloud-status');
 
         // Load current settings
         async function loadSettings() {
@@ -61,6 +87,28 @@
             crossfadeInput.value = data.crossfade_s;
             crossfadeValue.textContent = data.crossfade_s.toFixed(1) + 's';
             parseStyleSelect.value = data.parse_style;
+            clientIdInput.value = data.mixcloud_client_id || '';
+            clientSecretInput.value = data.mixcloud_client_secret || '';
+            updateConnectButton();
+            checkMixcloudStatus();
+        }
+
+        function updateConnectButton() {
+            connectBtn.disabled = !(clientIdInput.value.trim() && clientSecretInput.value.trim());
+        }
+
+        async function checkMixcloudStatus() {
+            const resp = await fetch('/api/mixcloud/status');
+            const data = await resp.json();
+            if (data.connected) {
+                mixcloudStatusEl.textContent = 'Connected';
+                mixcloudStatusEl.className = 'mixcloud-status connected';
+                connectBtn.textContent = 'Reconnect';
+            } else {
+                mixcloudStatusEl.textContent = 'Not connected';
+                mixcloudStatusEl.className = 'mixcloud-status not-connected';
+                connectBtn.textContent = 'Connect to Mixcloud';
+            }
         }
 
         async function saveSettings() {
@@ -70,6 +118,8 @@
                 body: JSON.stringify({
                     crossfade_s: parseFloat(crossfadeInput.value),
                     parse_style: parseStyleSelect.value,
+                    mixcloud_client_id: clientIdInput.value.trim(),
+                    mixcloud_client_secret: clientSecretInput.value.trim(),
                 }),
             });
             if (resp.ok) {
@@ -79,11 +129,43 @@
             }
         }
 
+        async function connectMixcloud() {
+            await saveSettings();
+            const resp = await fetch('/api/mixcloud/auth');
+            const data = await resp.json();
+            if (data.error) {
+                mixcloudStatusEl.textContent = data.error;
+                mixcloudStatusEl.className = 'mixcloud-status error';
+                return;
+            }
+            window.open(data.auth_url, '_blank');
+            mixcloudStatusEl.textContent = 'Waiting for authorization...';
+            mixcloudStatusEl.className = 'mixcloud-status pending';
+            // Poll for connection status
+            const poll = setInterval(async () => {
+                const sr = await fetch('/api/mixcloud/status');
+                const sd = await sr.json();
+                if (sd.connected) {
+                    clearInterval(poll);
+                    mixcloudStatusEl.textContent = 'Connected';
+                    mixcloudStatusEl.className = 'mixcloud-status connected';
+                    connectBtn.textContent = 'Reconnect';
+                }
+            }, 2000);
+            // Stop polling after 3 minutes
+            setTimeout(() => clearInterval(poll), 180000);
+        }
+
         crossfadeInput.addEventListener('input', () => {
             crossfadeValue.textContent = parseFloat(crossfadeInput.value).toFixed(1) + 's';
         });
         crossfadeInput.addEventListener('change', saveSettings);
         parseStyleSelect.addEventListener('change', saveSettings);
+        clientIdInput.addEventListener('input', updateConnectButton);
+        clientSecretInput.addEventListener('input', updateConnectButton);
+        clientIdInput.addEventListener('change', saveSettings);
+        clientSecretInput.addEventListener('change', saveSettings);
+        connectBtn.addEventListener('click', connectMixcloud);
 
         loadSettings();
     </script>
