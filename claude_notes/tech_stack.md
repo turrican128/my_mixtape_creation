@@ -19,4 +19,8 @@
 ## Audio Pipeline
 - Inputs: mp3, wav, flac, m4a, aac, ogg
 - Output: 320kbps MP3, normalized to 48kHz stereo fltp
-- Effects: acrossfade between tracks, loudnorm, optional DJ-random FX (highpass/lowpass/echo/phaser/tremolo)
+- Effects: acrossfade between tracks, loudnorm
+- Three FX modes (all crossfade-based, no plain/hard-cut option):
+  - **dj-smooth** — warm, gentle effects (ambient echo, soft phaser, warmth EQ, gentle tremolo, high-end rolloff); smooth curves only; 50% FX probability
+  - **dj-random** — varied crossfade curves with occasional subtle FX (highpass/lowpass/echo/phaser/tremolo); configurable FX probability (default 35%)
+  - **dj-dynamic** — aggressive effects (strong bass cut, muffled, dub echo, intense phaser, fast tremolo, compressor); 70% FX probability

@@ -24,6 +24,7 @@
             <div class="header-info" id="header-info">
                 <span class="total-duration" id="total-duration">--:--</span>
                 <span class="track-count" id="track-count">0 tracks</span>
+                <a href="/settings" class="btn btn-sm btn-secondary">&#9881; Settings</a>
             </div>
         </header>
 
@@ -42,57 +43,9 @@
                 </div>
             </section>
 
-            <!-- Settings panel -->
-            <aside class="settings-panel">
-                <h2>Settings</h2>
-
-                <!-- Transition mode -->
-                <div class="setting-group">
-                    <label class="setting-label" for="transition-mode">Transition Mode</label>
-                    <select id="transition-mode" class="setting-select">
-                        <option value="dj-smooth" selected>DJ Smooth</option>
-                        <option value="dj-random">DJ Random</option>
-                        <option value="dj-dynamic">DJ Dynamic</option>
-                    </select>
-                </div>
-
-                <!-- Crossfade duration -->
-                <div class="setting-group" id="crossfade-group">
-                    <label class="setting-label" for="crossfade-duration">
-                        Crossfade Duration
-                        <span class="setting-value" id="crossfade-value">6.0s</span>
-                    </label>
-                    <input type="range" id="crossfade-duration" min="0" max="15" step="0.5" value="6">
-                </div>
-
-                <!-- FX probability (DJ Random only) -->
-                <div class="setting-group hidden" id="fx-prob-group">
-                    <label class="setting-label" for="fx-prob">
-                        FX Probability
-                        <span class="setting-value" id="fx-prob-value">0.35</span>
-                    </label>
-                    <input type="range" id="fx-prob" min="0" max="1" step="0.05" value="0.35">
-                </div>
-
-                <!-- FX seed (DJ Random only) -->
-                <div class="setting-group hidden" id="fx-seed-group">
-                    <label class="setting-label" for="fx-seed">
-                        FX Seed <small>(optional, for reproducibility)</small>
-                    </label>
-                    <input type="number" id="fx-seed" class="setting-input" placeholder="Random">
-                </div>
-
-                <!-- Parse style -->
-                <div class="setting-group">
-                    <label class="setting-label" for="parse-style">Filename Parsing</label>
-                    <select id="parse-style" class="setting-select">
-                        <option value="artist-dash-title">Artist – Title (split on " - ")</option>
-                        <option value="filename-only">Filename only</option>
-                    </select>
-                </div>
-
-                <!-- Build button -->
-                <div class="setting-group build-section">
+            <!-- Build section -->
+            <aside class="build-panel">
+                <div class="build-section">
                     <button class="btn btn-primary btn-lg" id="btn-build" disabled>
                         ⚡ Build Mixtape
                     </button>

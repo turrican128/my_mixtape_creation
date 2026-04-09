@@ -28,9 +28,9 @@ def main(argv: list[str] | None = None) -> int:
     p_build.add_argument("--first-track", default=None, help="Pin this exact filename as the first track")
     p_build.add_argument(
         "--fx",
-        choices=["none", "dj-random"],
-        default="none",
-        help="Optional transition FX mode (dj-random varies crossfade curves and adds subtle FX sometimes)",
+        choices=["default", "dj-smooth", "dj-random", "dj-dynamic"],
+        default="default",
+        help="Transition FX mode: default (plain crossfade), dj-smooth (warm FX), dj-random (varied), dj-dynamic (aggressive)",
     )
     p_build.add_argument("--fx-prob", type=float, default=0.35, help="Probability of applying a transition FX (dj-random only)")
     p_build.add_argument("--fx-seed", type=int, default=None, help="Seed for deterministic randomness (dj-random only)")

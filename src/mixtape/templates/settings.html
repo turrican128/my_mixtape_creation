@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings — Mixtape Creator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-title">
+                <span class="header-icon">&#9881;</span>
+                <h1>Settings</h1>
+            </div>
+            <div class="header-info">
+                <a href="/" class="btn btn-sm btn-secondary">&larr; Back</a>
+            </div>
+        </header>
+
+        <!-- Settings content -->
+        <main class="settings-main">
+            <div class="settings-form">
+                <!-- Transition Duration -->
+                <div class="setting-group">
+                    <label class="setting-label" for="crossfade-duration">
+                        Transition Duration
+                        <span class="setting-value" id="crossfade-value">6.0s</span>
+                    </label>
+                    <input type="range" id="crossfade-duration" min="0" max="15" step="0.5" value="6">
+                    <p class="setting-help">Duration of crossfade overlap between tracks</p>
+                </div>
+
+                <!-- Filename Parsing -->
+                <div class="setting-group">
+                    <label class="setting-label" for="parse-style">Filename Parsing</label>
+                    <select id="parse-style" class="setting-select">
+                        <option value="artist-dash-title">Artist &ndash; Title (split on " - ")</option>
+                        <option value="filename-only">Filename only</option>
+                    </select>
+                    <p class="setting-help">How to extract artist and title from filenames</p>
+                </div>
+
+                <!-- Save status -->
+                <div class="settings-status" id="settings-status"></div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const crossfadeInput = document.getElementById('crossfade-duration');
+        const crossfadeValue = document.getElementById('crossfade-value');
+        const parseStyleSelect = document.getElementById('parse-style');
+        const statusEl = document.getElementById('settings-status');
+
+        // Load current settings
+        async function loadSettings() {
+            const resp = await fetch('/api/settings');
+            const data = await resp.json();
+            crossfadeInput.value = data.crossfade_s;
+            crossfadeValue.textContent = data.crossfade_s.toFixed(1) + 's';
+            parseStyleSelect.value = data.parse_style;
+        }
+
+        async function saveSettings() {
+            const resp = await fetch('/api/settings', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    crossfade_s: parseFloat(crossfadeInput.value),
+                    parse_style: parseStyleSelect.value,
+                }),
+            });
+            if (resp.ok) {
+                statusEl.textContent = 'Settings saved';
+                statusEl.className = 'settings-status saved';
+                setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'settings-status'; }, 2000);
+            }
+        }
+
+        crossfadeInput.addEventListener('input', () => {
+            crossfadeValue.textContent = parseFloat(crossfadeInput.value).toFixed(1) + 's';
+        });
+        crossfadeInput.addEventListener('change', saveSettings);
+        parseStyleSelect.addEventListener('change', saveSettings);
+
+        loadSettings();
+    </script>
+</body>
+</html>
