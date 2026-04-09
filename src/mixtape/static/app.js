@@ -268,11 +268,15 @@
     // ----------------------------------------------------------------
     // Mixcloud Upload
     // ----------------------------------------------------------------
-    const $uploadSection = document.getElementById("upload-section");
+    const $uploadTrigger = document.getElementById("upload-trigger");
+    const $btnShowUpload = document.getElementById("btn-show-upload");
+    const $uploadModal = document.getElementById("upload-modal");
     const $uploadName = document.getElementById("upload-name");
     const $uploadDescription = document.getElementById("upload-description");
     const $uploadTags = document.getElementById("upload-tags");
     const $btnUpload = document.getElementById("btn-upload");
+    const $btnModalClose = document.getElementById("btn-modal-close");
+    const $btnModalCancel = document.getElementById("btn-modal-cancel");
     const $uploadStatus = document.getElementById("upload-status");
 
     async function checkMixcloudConnection() {
@@ -285,8 +289,18 @@
     }
 
     function showUploadSection() {
-        if (!mixcloudConnected || !$uploadSection) return;
-        $uploadSection.classList.remove("hidden");
+        if (!mixcloudConnected || !$uploadTrigger) return;
+        $uploadTrigger.classList.remove("hidden");
+    }
+
+    function openUploadModal() {
+        $uploadModal.classList.remove("hidden");
+        $uploadStatus.textContent = "";
+        $uploadStatus.className = "upload-status";
+    }
+
+    function closeUploadModal() {
+        $uploadModal.classList.add("hidden");
     }
 
     async function uploadToMixcloud() {
@@ -379,7 +393,13 @@
     // ----------------------------------------------------------------
     $btnRefresh.addEventListener("click", loadTracks);
     $btnBuild.addEventListener("click", buildMixtape);
+    if ($btnShowUpload) $btnShowUpload.addEventListener("click", openUploadModal);
     if ($btnUpload) $btnUpload.addEventListener("click", uploadToMixcloud);
+    if ($btnModalClose) $btnModalClose.addEventListener("click", closeUploadModal);
+    if ($btnModalCancel) $btnModalCancel.addEventListener("click", closeUploadModal);
+    if ($uploadModal) $uploadModal.addEventListener("click", (e) => {
+        if (e.target === $uploadModal) closeUploadModal();
+    });
 
     // ----------------------------------------------------------------
     // Initialize
