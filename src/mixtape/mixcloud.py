@@ -95,35 +95,38 @@ def auth_cmd(client_id: str, client_secret: str, redirect_uri: str, token_path: 
     print(url)
     webbrowser.open(url)
 
-    # Wait for code
-    for _ in range(600):
-        if "code" in code_box:
-            break
-        time.sleep(0.25)
-    else:
-        print("Timed out waiting for OAuth callback.", file=sys.stderr)
-        return 1
+    try:
+        # Wait for code
+        for _ in range(600):
+            if "code" in code_box:
+                break
+            time.sleep(0.25)
+        else:
+            print("Timed out waiting for OAuth callback.", file=sys.stderr)
+            return 1
 
-    token_url = "https://www.mixcloud.com/oauth/access_token"
-    r = requests.post(
-        token_url,
-        data={
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "redirect_uri": redirect_uri,
-            "code": code_box["code"],
-        },
-        timeout=60,
-    )
-    r.raise_for_status()
-    token = r.json()
-    if "access_token" not in token:
-        print(f"Unexpected token response: {token}", file=sys.stderr)
-        return 1
+        token_url = "https://www.mixcloud.com/oauth/access_token"
+        r = requests.post(
+            token_url,
+            data={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "redirect_uri": redirect_uri,
+                "code": code_box["code"],
+            },
+            timeout=60,
+        )
+        r.raise_for_status()
+        token = r.json()
+        if "access_token" not in token:
+            print(f"Unexpected token response: {token}", file=sys.stderr)
+            return 1
 
-    _save_json(token_path, token)
-    print(f"Saved token to: {token_path}")
-    return 0
+        _save_json(token_path, token)
+        print(f"Saved token to: {token_path}")
+        return 0
+    finally:
+        httpd.server_close()
 
 
 def upload_cmd(
@@ -182,10 +185,15 @@ def upload_cmd(
             data[f"sections-{i}-song"] = song
         data[f"sections-{i}-start_time"] = str(start_i)
 
-    with mp3_path.open("rb") as f:
-        files = {"mp3": (mp3_path.name, f, "audio/mpeg")}
-        r = requests.post(url, data=data, files=files, timeout=60 * 30)
-    r.raise_for_status()
+    print(f"Uploading {mp3_path.name} to Mixcloud...")
+    try:
+        with mp3_path.open("rb") as f:
+            files = {"mp3": (mp3_path.name, f, "audio/mpeg")}
+            r = requests.post(url, data=data, files=files, timeout=60 * 30)
+        r.raise_for_status()
+    except requests.RequestException as exc:
+        print(f"Upload failed: {exc}", file=sys.stderr)
+        return 1
     resp = r.json()
     print(json.dumps(resp, indent=2))
     return 0

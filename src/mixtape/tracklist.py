@@ -94,8 +94,11 @@ def discover_tracks(
         order = manifest["order"]
         if not isinstance(order, list) or not all(isinstance(x, str) for x in order):
             raise ValueError("manifest 'order' must be a list of filenames")
-        by_name = {p.name: p for p in files}
-        missing = [name for name in order if name not in by_name]
+        by_name = {p.name.lower(): p for p in files}
+        missing = [name for name in order if name.lower() not in by_name]
+        if missing:
+            raise FileNotFoundError(f"manifest order references missing files: {missing}")
+        files = [by_name[name.lower()] for name in order]
         if missing:
             raise FileNotFoundError(f"manifest order references missing files: {missing}")
         files = [by_name[name] for name in order]
@@ -138,9 +141,8 @@ def compute_start_times(tracks: list[Track], crossfade_s: float) -> list[Track]:
             raise ValueError("duration_s must be populated before computing start times")
         out.append(Track(**{**tr.__dict__, "start_time_s": max(0.0, t)}))
         if i < len(tracks) - 1:
-            t = t + tr.duration_s - crossfade_s
-            if t < 0:
-                t = 0.0
+            effective_crossfade = min(crossfade_s, tr.duration_s)
+            t = t + tr.duration_s - effective_crossfade
     return out
 
 

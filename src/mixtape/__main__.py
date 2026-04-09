@@ -7,6 +7,7 @@ from pathlib import Path
 from .audio import build_mix
 from .mixcloud import auth_cmd, upload_cmd
 from .tracklist import TrackParseStyle
+from .web import serve_cmd
 
 
 def _path(p: str) -> Path:
@@ -44,12 +45,17 @@ def main(argv: list[str] | None = None) -> int:
 
     p_upload = sub.add_parser("upload", help="Upload a built MP3 to Mixcloud")
     p_upload.add_argument("--name", required=True)
-    p_upload.add_argument("--mp3", type=_path, default=_path("dist/mixtape.mp3"))
-    p_upload.add_argument("--tracklist", type=_path, default=_path("dist/tracklist.json"))
+    p_upload.add_argument("--mp3", type=_path, default=_path("output/mixtape.mp3"))
+    p_upload.add_argument("--tracklist", type=_path, default=_path("output/tracklist.json"))
     p_upload.add_argument("--description", default="")
     p_upload.add_argument("--tag", action="append", default=[], help="Repeatable tag")
     p_upload.add_argument("--token-path", type=_path, default=_path(".mixcloud_token.json"))
     p_upload.add_argument("--percentage-music", type=int, default=100)
+
+    p_serve = sub.add_parser("serve", help="Launch the Mixtape web UI")
+    p_serve.add_argument("--input", type=_path, default=_path("Music for mixtape"), help="Input folder with audio tracks")
+    p_serve.add_argument("--host", default="127.0.0.1", help="Host to bind to")
+    p_serve.add_argument("--port", type=int, default=5000, help="Port to listen on")
 
     args = parser.parse_args(argv)
 
@@ -84,6 +90,12 @@ def main(argv: list[str] | None = None) -> int:
             description=args.description,
             tags=args.tag,
             percentage_music=args.percentage_music,
+        )
+    if args.cmd == "serve":
+        return serve_cmd(
+            input_dir=args.input,
+            host=args.host,
+            port=args.port,
         )
 
     print(f"Unknown command: {args.cmd}", file=sys.stderr)
