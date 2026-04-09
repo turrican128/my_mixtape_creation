@@ -1,0 +1,15 @@
+dist/
+output/
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+*.log
+.mixcloud_token.json
+
+# Local source tracks (large binaries); add your own files here after clone
+Music for mixtape/*
+!Music for mixtape/.gitkeep
+
