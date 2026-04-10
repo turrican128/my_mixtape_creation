@@ -723,6 +723,47 @@ input[type="range"]::-moz-range-thumb {
     font-family: inherit;
 }
 
+/* Cover art preset + preview */
+.cover-base-note {
+    margin-left: 8px;
+    font-weight: 400;
+    font-size: 11px;
+}
+.cover-base-note.ok {
+    color: var(--green, #3fb950);
+}
+.cover-base-note.missing {
+    color: var(--text-muted, #8b949e);
+    font-style: italic;
+}
+.cover-preview-wrap {
+    margin-top: 10px;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    max-width: 260px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+.cover-preview {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.cover-preview-placeholder {
+    padding: 16px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-muted, #8b949e);
+    font-style: italic;
+}
+
 .modal-footer {
     display: flex;
     justify-content: flex-end;

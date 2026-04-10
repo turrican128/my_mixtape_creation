@@ -7,6 +7,7 @@ dependencies = [
   "requests",
   "PyYAML",
   "flask",
+  "Pillow",
 ]
 
 [project.scripts]

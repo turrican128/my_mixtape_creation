@@ -78,6 +78,25 @@
                     <label class="setting-label" for="upload-tags">Tags <small>(comma-separated)</small></label>
                     <input type="text" id="upload-tags" class="setting-input" placeholder="mixtape, dj, electronic">
                 </div>
+
+                <!-- Cover art -->
+                <div class="setting-group">
+                    <label class="setting-label" for="cover-preset">
+                        Cover Art Preset
+                        <small id="cover-base-note" class="cover-base-note"></small>
+                    </label>
+                    <select id="cover-preset" class="setting-input">
+                        <option value="neon">Neon — hot pink + cyan glow</option>
+                        <option value="chrome">Chrome — metallic silver</option>
+                        <option value="outrun">Outrun — magenta/amber gradient</option>
+                    </select>
+                    <div class="cover-preview-wrap">
+                        <img id="cover-preview" class="cover-preview hidden" alt="Cover preview">
+                        <div id="cover-preview-placeholder" class="cover-preview-placeholder">
+                            Cover preview will appear here
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" id="btn-modal-cancel">Cancel</button>
