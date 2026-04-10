@@ -406,6 +406,7 @@
     const $btnModalCancel = document.getElementById("btn-modal-cancel");
     const $uploadStatus = document.getElementById("upload-status");
     const $coverPreset = document.getElementById("cover-preset");
+    const $coverTextSize = document.getElementById("cover-text-size");
     const $coverPreview = document.getElementById("cover-preview");
     const $coverPreviewPlaceholder = document.getElementById("cover-preview-placeholder");
     const $coverBaseNote = document.getElementById("cover-base-note");
@@ -491,8 +492,9 @@
         }
         const preset = $coverPreset.value || "neon";
         // Cache-bust with a counter so the browser re-fetches on each change.
+        const textSize = ($coverTextSize && $coverTextSize.value) || "medium";
         const bust = Date.now();
-        const url = `/api/cover/preview?title=${encodeURIComponent(title)}&preset=${encodeURIComponent(preset)}&_=${bust}`;
+        const url = `/api/cover/preview?title=${encodeURIComponent(title)}&preset=${encodeURIComponent(preset)}&text_size=${encodeURIComponent(textSize)}&_=${bust}`;
         $coverPreview.onload = () => {
             $coverPreview.classList.remove("hidden");
             $coverPreviewPlaceholder.classList.add("hidden");
@@ -569,6 +571,7 @@
                     description: $uploadDescription.value.trim(),
                     tags,
                     cover_preset: $coverPreset.value || "neon",
+                    text_size: ($coverTextSize && $coverTextSize.value) || "medium",
                 }),
             });
             pollUploadStatus(data.job_id);
@@ -643,9 +646,10 @@
     if ($uploadModal) $uploadModal.addEventListener("click", (e) => {
         if (e.target === $uploadModal) closeUploadModal();
     });
-    // Cover preview: debounced refresh on title changes, immediate on preset change.
+    // Cover preview: debounced refresh on title changes, immediate on preset / text-size change.
     if ($uploadName) $uploadName.addEventListener("input", () => schedulePreviewRefresh());
     if ($coverPreset) $coverPreset.addEventListener("change", () => schedulePreviewRefresh(0));
+    if ($coverTextSize) $coverTextSize.addEventListener("change", () => schedulePreviewRefresh(0));
 
     // ----------------------------------------------------------------
     // Initialize

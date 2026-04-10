@@ -82,9 +82,17 @@ def generate_cover(
     title: str,
     preset: str,
     out_path: Path,
+    text_scale: float = 1.0,
 ) -> Path:
     """Render ``title`` onto ``base_image_path`` using ``preset`` and save
-    the result to ``out_path``. Returns the output path."""
+    the result to ``out_path``. Returns the output path.
+
+    ``text_scale`` is a multiplier applied to the preset's starting font
+    size. Values < 1.0 lower the ceiling (smaller text for short titles);
+    values > 1.0 raise it. The auto-fit floor is unchanged, so very long
+    titles still shrink to fit regardless of the caller's choice.
+    ``1.0`` (default) preserves the original behavior.
+    """
     if preset not in PRESETS:
         preset = "neon"
 
@@ -93,11 +101,11 @@ def generate_cover(
 
     # Dispatch to preset-specific renderer.
     if preset == "neon":
-        out = _render_neon(base, title)
+        out = _render_neon(base, title, text_scale)
     elif preset == "chrome":
-        out = _render_chrome(base, title)
+        out = _render_chrome(base, title, text_scale)
     else:  # outrun
-        out = _render_outrun(base, title)
+        out = _render_outrun(base, title, text_scale)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out.save(out_path, "JPEG", quality=92)
@@ -182,9 +190,16 @@ def _text_height(draw: ImageDraw.ImageDraw, text: str,
 
 
 def _fit_font_size(draw: ImageDraw.ImageDraw, title: str, max_width: int,
-                   start: int, minimum: int) -> tuple[ImageFont.ImageFont, list[str]]:
+                   start: int, minimum: int,
+                   text_scale: float = 1.0) -> tuple[ImageFont.ImageFont, list[str]]:
     """Shrink the font until the wrapped title fits within ``max_width``.
-    Returns the chosen font and the wrapped lines."""
+    Returns the chosen font and the wrapped lines.
+
+    ``text_scale`` multiplies ``start`` (the ceiling), clamped so the scaled
+    ceiling is never below ``minimum``. This lets callers make short titles
+    render smaller without breaking the shrink-to-fit fallback for long ones.
+    """
+    start = max(int(start * text_scale), minimum)
     size = start
     while size >= minimum:
         font = _load_font(size)
@@ -201,7 +216,7 @@ def _fit_font_size(draw: ImageDraw.ImageDraw, title: str, max_width: int,
 # Preset renderers
 # ---------------------------------------------------------------------------
 
-def _render_neon(base: Image.Image, title: str) -> Image.Image:
+def _render_neon(base: Image.Image, title: str, text_scale: float = 1.0) -> Image.Image:
     """Hot pink fill + cyan outer glow, bottom third, with a translucent
     black gradient so the text reads on any background."""
     img = base.copy()
@@ -209,7 +224,8 @@ def _render_neon(base: Image.Image, title: str) -> Image.Image:
 
     draw = ImageDraw.Draw(img, "RGBA")
     max_width = int(COVER_SIZE * 0.86)
-    font, lines = _fit_font_size(draw, title, max_width, start=190, minimum=60)
+    font, lines = _fit_font_size(draw, title, max_width, start=190, minimum=60,
+                                 text_scale=text_scale)
 
     line_h = max(_text_height(draw, line, font) for line in lines) if lines else 0
     spacing = int(line_h * 0.18)
@@ -239,14 +255,15 @@ def _render_neon(base: Image.Image, title: str) -> Image.Image:
     return img.convert("RGB")
 
 
-def _render_chrome(base: Image.Image, title: str) -> Image.Image:
+def _render_chrome(base: Image.Image, title: str, text_scale: float = 1.0) -> Image.Image:
     """Metallic silver gradient fill + heavy drop shadow. Cinematic, bold."""
     img = base.copy()
     img = _apply_bottom_scrim(img, strength=200)
 
     draw = ImageDraw.Draw(img, "RGBA")
     max_width = int(COVER_SIZE * 0.86)
-    font, lines = _fit_font_size(draw, title, max_width, start=200, minimum=60)
+    font, lines = _fit_font_size(draw, title, max_width, start=200, minimum=60,
+                                 text_scale=text_scale)
 
     line_h = max(_text_height(draw, line, font) for line in lines) if lines else 0
     spacing = int(line_h * 0.18)
@@ -286,14 +303,15 @@ def _render_chrome(base: Image.Image, title: str) -> Image.Image:
     return img.convert("RGB")
 
 
-def _render_outrun(base: Image.Image, title: str) -> Image.Image:
+def _render_outrun(base: Image.Image, title: str, text_scale: float = 1.0) -> Image.Image:
     """Magenta→orange gradient fill with subtle scanlines, centered."""
     img = base.copy()
     img = _apply_bottom_scrim(img, strength=160)
 
     draw = ImageDraw.Draw(img, "RGBA")
     max_width = int(COVER_SIZE * 0.86)
-    font, lines = _fit_font_size(draw, title, max_width, start=200, minimum=60)
+    font, lines = _fit_font_size(draw, title, max_width, start=200, minimum=60,
+                                 text_scale=text_scale)
 
     line_h = max(_text_height(draw, line, font) for line in lines) if lines else 0
     spacing = int(line_h * 0.18)
