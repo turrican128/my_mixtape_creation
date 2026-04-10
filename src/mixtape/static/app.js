@@ -25,6 +25,18 @@
     audioPlayer.addEventListener("play", () => updatePlayButtons());
     audioPlayer.addEventListener("pause", () => updatePlayButtons());
 
+    // Monotonic counter so stale /api/tracks/reorder responses can't
+    // clobber newer local mutations (e.g. rapid successive deletes).
+    let reorderSeq = 0;
+
+    // Fully release the audio element — pause, clear src, load().
+    function clearAudioPlayer() {
+        audioPlayer.pause();
+        audioPlayer.removeAttribute("src");
+        try { audioPlayer.load(); } catch (e) { /* ignore */ }
+        currentlyPlaying = null;
+    }
+
     // ----------------------------------------------------------------
     // DOM references
     // ----------------------------------------------------------------
@@ -213,10 +225,10 @@
     // Delete track from playlist (does not delete file on disk)
     // ----------------------------------------------------------------
     function deleteTrack(file) {
-        // Stop playback if deleting the currently-loaded track
+        // Fully release the audio element if the deleted track is loaded
+        // (whether playing or paused) — drops any in-flight fetch.
         if (currentlyPlaying === file) {
-            audioPlayer.pause();
-            currentlyPlaying = null;
+            clearAudioPlayer();
         }
         tracks = tracks.filter((t) => t.file !== file);
         delete transitionModes[file];
@@ -274,11 +286,15 @@
     // ----------------------------------------------------------------
     async function reorderTracks() {
         const order = tracks.map((t) => t.file);
+        const seq = ++reorderSeq;
         try {
             const data = await api("/api/tracks/reorder", {
                 method: "POST",
                 body: JSON.stringify({ order }),
             });
+            // Drop stale responses: if another reorder/delete happened
+            // after this request was sent, its mutation is authoritative.
+            if (seq !== reorderSeq) return;
             tracks = data.tracks;
             updateSummary(data.total_duration_display, tracks.length);
             // Re-render so position numbers and server-recomputed data
