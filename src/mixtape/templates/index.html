@@ -24,6 +24,9 @@
             <div class="header-info" id="header-info">
                 <span class="total-duration" id="total-duration">--:--</span>
                 <span class="track-count" id="track-count">0 tracks</span>
+                <button class="btn btn-upload btn-sm hidden" id="btn-show-upload" title="Upload the built mixtape to Mixcloud">
+                    ☁ Upload to Mixcloud
+                </button>
                 <a href="/settings" class="btn btn-sm btn-secondary">&#9881; Settings</a>
             </div>
         </header>
@@ -43,20 +46,13 @@
                 </div>
             </section>
 
-            <!-- Build & Upload section -->
+            <!-- Build section -->
             <aside class="build-panel">
                 <div class="build-section">
                     <button class="btn btn-primary btn-lg" id="btn-build" disabled>
                         ⚡ Build Mixtape
                     </button>
                     <div class="build-status" id="build-status"></div>
-                </div>
-
-                <!-- Upload button (hidden until build completes + Mixcloud connected) -->
-                <div class="upload-trigger hidden" id="upload-trigger">
-                    <button class="btn btn-upload btn-lg" id="btn-show-upload">
-                        ☁ Upload to Mixcloud
-                    </button>
                 </div>
             </aside>
         </main>
