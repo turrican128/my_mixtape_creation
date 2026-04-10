@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import re
 import secrets
 import threading
 import urllib.parse
@@ -65,6 +67,33 @@ def _persist_config() -> None:
         "mixcloud_access_token": _settings["mixcloud_access_token"],
         "anthropic_api_key": _settings["anthropic_api_key"],
     })
+
+
+# Sent to the client in place of a stored secret, so the real value
+# never leaves the server. If the client PUTs this placeholder back
+# unchanged, we keep the existing value.
+_SECRET_MASK = "********"
+_SECRET_FIELDS = ("mixcloud_client_secret", "anthropic_api_key")
+
+
+def _public_settings() -> dict[str, Any]:
+    """Return a copy of _settings safe to send to the client, with
+    stored secrets replaced by a mask."""
+    out = dict(_settings)
+    for field in _SECRET_FIELDS:
+        if out.get(field):
+            out[field] = _SECRET_MASK
+    # Never expose the access token at all.
+    out.pop("mixcloud_access_token", None)
+    return out
+
+
+def _resolve_secret(incoming: str, field: str) -> str:
+    """If the client sends back the placeholder, keep the existing
+    value; otherwise accept the new value (including clearing to '')."""
+    if incoming == _SECRET_MASK:
+        return _settings.get(field, "")
+    return incoming.strip()
 
 # Transient OAuth state (not persisted)
 _oauth_state: str = ""
@@ -404,7 +433,7 @@ def create_app(input_dir: Path | None = None) -> Flask:
 
     @app.route("/api/settings", methods=["GET"])
     def api_settings_get():
-        return jsonify(_settings)
+        return jsonify(_public_settings())
 
     @app.route("/api/settings", methods=["PUT"])
     def api_settings_put():
@@ -424,12 +453,16 @@ def create_app(input_dir: Path | None = None) -> Flask:
         if "mixcloud_client_id" in data:
             _settings["mixcloud_client_id"] = str(data["mixcloud_client_id"]).strip()
         if "mixcloud_client_secret" in data:
-            _settings["mixcloud_client_secret"] = str(data["mixcloud_client_secret"]).strip()
+            _settings["mixcloud_client_secret"] = _resolve_secret(
+                str(data["mixcloud_client_secret"]), "mixcloud_client_secret"
+            )
         # Anthropic API key (used for AI auto-fill of upload metadata)
         if "anthropic_api_key" in data:
-            _settings["anthropic_api_key"] = str(data["anthropic_api_key"]).strip()
+            _settings["anthropic_api_key"] = _resolve_secret(
+                str(data["anthropic_api_key"]), "anthropic_api_key"
+            )
         _persist_config()
-        return jsonify(_settings)
+        return jsonify(_public_settings())
 
     # ------------------------------------------------------------------
     # API: Mixcloud OAuth
@@ -567,21 +600,26 @@ def create_app(input_dir: Path | None = None) -> Flask:
                 if block.get("type") == "text":
                     text += block.get("text", "")
             text = text.strip()
-            # Strip accidental code fences
-            if text.startswith("```"):
-                text = text.strip("`")
-                if text.startswith("json"):
-                    text = text[4:]
-                text = text.strip()
+            # Strip accidental markdown code fences (```json ... ``` or ``` ... ```)
+            text = re.sub(r"^```[a-zA-Z]*\n?", "", text)
+            text = re.sub(r"\n?```$", "", text)
+            text = text.strip()
             suggestion = json.loads(text)
         except http_requests.HTTPError as exc:
             status = exc.response.status_code if exc.response is not None else 500
+            # Log the upstream body server-side for debugging, but don't echo
+            # it back to the client — it may contain the API key or other
+            # sensitive details.
             body = exc.response.text[:300] if exc.response is not None else str(exc)
-            return jsonify({"error": f"Anthropic API error ({status}): {body}"}), 502
+            logging.getLogger(__name__).warning(
+                "Anthropic API error %s: %s", status, body
+            )
+            return jsonify({"error": f"Anthropic API error ({status})"}), 502
         except json.JSONDecodeError:
             return jsonify({"error": "AI returned invalid JSON"}), 502
-        except Exception as exc:
-            return jsonify({"error": f"AI suggestion failed: {exc}"}), 500
+        except Exception:
+            logging.getLogger(__name__).exception("AI suggestion failed")
+            return jsonify({"error": "AI suggestion failed"}), 500
 
         name = str(suggestion.get("name", "")).strip()[:100]
         description = str(suggestion.get("description", "")).strip()[:1000]

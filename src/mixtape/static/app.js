@@ -325,11 +325,6 @@
         $buildStatus.textContent = "Starting build…";
         $buildStatus.className = "build-status building";
         hideUploadSection();
-        // Clear any AI-generated fields from a previous build so the
-        // next modal open triggers a fresh suggestion.
-        if ($uploadName) $uploadName.value = "";
-        if ($uploadDescription) $uploadDescription.value = "";
-        if ($uploadTags) $uploadTags.value = "";
 
         const order = tracks.map((t) => t.file);
         // Build per-transition modes array (one per adjacent pair)
@@ -373,6 +368,13 @@
                     $buildStatus.className = "build-status success";
                     $btnBuild.disabled = false;
                     $btnBuild.textContent = "⚡ Build Mixtape";
+                    // Clear any AI-filled fields from a previous build so
+                    // the next modal open triggers fresh suggestions for
+                    // the new tracklist. Only clear on success — on error
+                    // we preserve whatever the user may have typed.
+                    if ($uploadName) $uploadName.value = "";
+                    if ($uploadDescription) $uploadDescription.value = "";
+                    if ($uploadTags) $uploadTags.value = "";
                     showUploadSection();
                 } else if (data.status === "error") {
                     clearInterval(pollTimer);
@@ -426,10 +428,13 @@
         if ($btnShowUpload) $btnShowUpload.classList.add("hidden");
     }
 
-    function openUploadModal() {
+    async function openUploadModal() {
         $uploadModal.classList.remove("hidden");
         $uploadStatus.textContent = "";
         $uploadStatus.className = "upload-status";
+        // Refresh connection/AI state in case the user added the API key
+        // or connected Mixcloud in Settings after this page loaded.
+        await checkMixcloudConnection();
         // Auto-fill from AI on first open per build, only if fields are empty
         if (aiEnabled && !$uploadName.value && !$uploadDescription.value && !$uploadTags.value) {
             autofillFromAI();
