@@ -131,6 +131,7 @@ def build_mix(
     first_track: str | None,
     dry_run: bool,
     transition_modes: list[str] | None = None,
+    include_files: list[str] | None = None,
 ) -> int:
     tracks = discover_tracks(
         input_dir=input_dir,
@@ -138,6 +139,12 @@ def build_mix(
         parse_style=parse_style,
         first_track=first_track,
     )
+
+    # Optional filter: restrict to the given filenames (case-insensitive)
+    # and order them according to include_files.
+    if include_files is not None:
+        by_name = {tr.path.name.lower(): tr for tr in tracks}
+        tracks = [by_name[f.lower()] for f in include_files if f.lower() in by_name]
 
     # Probe durations
     probed: list[Track] = []

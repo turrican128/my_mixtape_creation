@@ -13,6 +13,17 @@
     let currentJobId = null;
     let pollTimer = null;
     let mixcloudConnected = false;
+    let currentlyPlaying = null; // filename currently playing, or null
+    const audioPlayer = new Audio();
+    audioPlayer.preload = "none";
+    audioPlayer.addEventListener("ended", () => {
+        currentlyPlaying = null;
+        updatePlayButtons();
+    });
+    audioPlayer.addEventListener("pause", () => {
+        if (audioPlayer.ended) return;
+        // Manual pause — keep currentlyPlaying to show correct state
+    });
 
     // ----------------------------------------------------------------
     // DOM references
@@ -114,14 +125,21 @@
                         </select>
                     </div>`;
 
+                const isPlaying = currentlyPlaying === t.file && !audioPlayer.paused;
                 return `
             <div class="track-card" data-file="${escapeAttr(t.file)}">
+                <button class="track-play-btn${isPlaying ? " playing" : ""}" data-file="${escapeAttr(t.file)}" title="${isPlaying ? "Pause" : "Play"}">
+                    ${isPlaying ? "⏸" : "▶"}
+                </button>
                 <div class="track-pos">${i + 1}</div>
                 <div class="track-info">
                     <div class="track-display">${escapeHtml(t.display)}</div>
                     <div class="track-filename">${escapeHtml(t.file)}</div>
                 </div>
                 <div class="track-duration">${t.duration_display || "??"}</div>
+                <button class="track-delete-btn" data-file="${escapeAttr(t.file)}" title="Remove from playlist">
+                    ✕
+                </button>
             </div>${transitionHtml}`;
             })
             .join("");
@@ -133,7 +151,80 @@
             });
         });
 
+        // Attach play button listeners
+        $trackList.querySelectorAll(".track-play-btn").forEach((btn) => {
+            btn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                togglePlay(btn.dataset.file);
+            });
+            // Prevent drag-initiating pointer events on the button from starting a sort
+            btn.addEventListener("pointerdown", (e) => e.stopPropagation());
+            btn.addEventListener("mousedown", (e) => e.stopPropagation());
+        });
+
+        // Attach delete button listeners
+        $trackList.querySelectorAll(".track-delete-btn").forEach((btn) => {
+            btn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                deleteTrack(btn.dataset.file);
+            });
+            btn.addEventListener("pointerdown", (e) => e.stopPropagation());
+            btn.addEventListener("mousedown", (e) => e.stopPropagation());
+        });
+
         initSortable();
+    }
+
+    // ----------------------------------------------------------------
+    // Play / pause
+    // ----------------------------------------------------------------
+    function togglePlay(file) {
+        if (currentlyPlaying === file && !audioPlayer.paused) {
+            audioPlayer.pause();
+            currentlyPlaying = null;
+            updatePlayButtons();
+            return;
+        }
+        audioPlayer.src = `/api/audio/${encodeURIComponent(file)}`;
+        audioPlayer.play().then(() => {
+            currentlyPlaying = file;
+            updatePlayButtons();
+        }).catch((err) => {
+            console.error("Playback failed:", err);
+            currentlyPlaying = null;
+            updatePlayButtons();
+        });
+    }
+
+    function updatePlayButtons() {
+        $trackList.querySelectorAll(".track-play-btn").forEach((btn) => {
+            const isPlaying = currentlyPlaying === btn.dataset.file && !audioPlayer.paused;
+            btn.classList.toggle("playing", isPlaying);
+            btn.textContent = isPlaying ? "⏸" : "▶";
+            btn.title = isPlaying ? "Pause" : "Play";
+        });
+    }
+
+    // ----------------------------------------------------------------
+    // Delete track from playlist (does not delete file)
+    // ----------------------------------------------------------------
+    function deleteTrack(file) {
+        // Stop playback if deleting the currently-playing track
+        if (currentlyPlaying === file) {
+            audioPlayer.pause();
+            audioPlayer.src = "";
+            currentlyPlaying = null;
+        }
+        tracks = tracks.filter((t) => t.file !== file);
+        delete transitionModes[file];
+        renderTracks();
+        // Re-send order to backend to recompute total duration
+        if (tracks.length > 0) {
+            reorderTracks();
+        } else {
+            updateSummary("--:--", 0);
+            $btnBuild.disabled = true;
+        }
     }
 
     // ----------------------------------------------------------------
@@ -148,6 +239,8 @@
             animation: 200,
             handle: ".track-card",
             draggable: ".track-card",
+            filter: ".track-play-btn, .track-delete-btn",
+            preventOnFilter: false,
             ghostClass: "sortable-ghost",
             chosenClass: "sortable-chosen",
             dragClass: "sortable-drag",
