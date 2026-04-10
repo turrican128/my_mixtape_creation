@@ -53,7 +53,18 @@ _settings: dict[str, Any] = {
     "mixcloud_client_id": _config.get("mixcloud_client_id", ""),
     "mixcloud_client_secret": _config.get("mixcloud_client_secret", ""),
     "mixcloud_access_token": _config.get("mixcloud_access_token", ""),
+    "anthropic_api_key": _config.get("anthropic_api_key", ""),
 }
+
+
+def _persist_config() -> None:
+    """Write the current persistent settings back to the config file."""
+    _save_config({
+        "mixcloud_client_id": _settings["mixcloud_client_id"],
+        "mixcloud_client_secret": _settings["mixcloud_client_secret"],
+        "mixcloud_access_token": _settings["mixcloud_access_token"],
+        "anthropic_api_key": _settings["anthropic_api_key"],
+    })
 
 # Transient OAuth state (not persisted)
 _oauth_state: str = ""
@@ -414,12 +425,10 @@ def create_app(input_dir: Path | None = None) -> Flask:
             _settings["mixcloud_client_id"] = str(data["mixcloud_client_id"]).strip()
         if "mixcloud_client_secret" in data:
             _settings["mixcloud_client_secret"] = str(data["mixcloud_client_secret"]).strip()
-        # Persist Mixcloud fields to config file
-        _save_config({
-            "mixcloud_client_id": _settings["mixcloud_client_id"],
-            "mixcloud_client_secret": _settings["mixcloud_client_secret"],
-            "mixcloud_access_token": _settings["mixcloud_access_token"],
-        })
+        # Anthropic API key (used for AI auto-fill of upload metadata)
+        if "anthropic_api_key" in data:
+            _settings["anthropic_api_key"] = str(data["anthropic_api_key"]).strip()
+        _persist_config()
         return jsonify(_settings)
 
     # ------------------------------------------------------------------
@@ -474,11 +483,7 @@ def create_app(input_dir: Path | None = None) -> Flask:
         except Exception as exc:
             return f"Failed to exchange code for token: {exc}", 500
         _settings["mixcloud_access_token"] = access_token
-        _save_config({
-            "mixcloud_client_id": _settings["mixcloud_client_id"],
-            "mixcloud_client_secret": _settings["mixcloud_client_secret"],
-            "mixcloud_access_token": access_token,
-        })
+        _persist_config()
         return (
             "<html><body style='font-family:sans-serif;text-align:center;padding:60px;background:#0d1117;color:#e6edf3'>"
             "<h2 style='color:#3fb950'>Connected to Mixcloud!</h2>"
@@ -491,7 +496,104 @@ def create_app(input_dir: Path | None = None) -> Flask:
         return jsonify({
             "connected": bool(_settings.get("mixcloud_access_token")),
             "has_credentials": bool(_settings.get("mixcloud_client_id") and _settings.get("mixcloud_client_secret")),
+            "ai_enabled": bool(_settings.get("anthropic_api_key")),
         })
+
+    # ------------------------------------------------------------------
+    # API: AI suggestion for upload metadata
+    # ------------------------------------------------------------------
+
+    @app.route("/api/mixcloud/suggest", methods=["POST"])
+    def api_mixcloud_suggest():
+        api_key = _settings.get("anthropic_api_key", "")
+        if not api_key:
+            return jsonify({"error": "Anthropic API key not set. Add it in Settings."}), 400
+
+        tracklist_json_path = Path("output") / "tracklist.json"
+        if not tracklist_json_path.exists():
+            return jsonify({"error": "No built mixtape found. Build one first."}), 400
+
+        try:
+            tracks_raw = json.loads(tracklist_json_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            return jsonify({"error": f"Could not read tracklist: {exc}"}), 500
+        if not isinstance(tracks_raw, list) or not tracks_raw:
+            return jsonify({"error": "Tracklist is empty"}), 400
+
+        # Build a compact tracklist summary for the prompt
+        lines: list[str] = []
+        for i, tr in enumerate(tracks_raw[:200], start=1):
+            artist = str(tr.get("artist", "") or "").strip()
+            title = str(tr.get("title", "") or tr.get("song", "") or "").strip()
+            if artist and title:
+                lines.append(f"{i}. {artist} — {title}")
+            elif title:
+                lines.append(f"{i}. {title}")
+            elif artist:
+                lines.append(f"{i}. {artist}")
+        tracklist_text = "\n".join(lines)
+
+        prompt = (
+            "You are helping name a DJ mixtape that will be uploaded to Mixcloud. "
+            "Based on the tracklist below, propose:\n"
+            "- a short, catchy mixtape name (max 60 characters, no quotes)\n"
+            "- a punchy 1-2 sentence description that captures the vibe (max 280 characters)\n"
+            "- 3-5 relevant lowercase tags (genres, moods, eras)\n\n"
+            "Respond with ONLY a JSON object, no markdown fences, no commentary. "
+            'Shape: {"name": "...", "description": "...", "tags": ["...", "..."]}\n\n'
+            "Tracklist:\n"
+            f"{tracklist_text}\n"
+        )
+
+        try:
+            r = http_requests.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": "claude-haiku-4-5",
+                    "max_tokens": 512,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+                timeout=30,
+            )
+            r.raise_for_status()
+            data = r.json()
+            text = ""
+            for block in data.get("content", []):
+                if block.get("type") == "text":
+                    text += block.get("text", "")
+            text = text.strip()
+            # Strip accidental code fences
+            if text.startswith("```"):
+                text = text.strip("`")
+                if text.startswith("json"):
+                    text = text[4:]
+                text = text.strip()
+            suggestion = json.loads(text)
+        except http_requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else 500
+            body = exc.response.text[:300] if exc.response is not None else str(exc)
+            return jsonify({"error": f"Anthropic API error ({status}): {body}"}), 502
+        except json.JSONDecodeError:
+            return jsonify({"error": "AI returned invalid JSON"}), 502
+        except Exception as exc:
+            return jsonify({"error": f"AI suggestion failed: {exc}"}), 500
+
+        name = str(suggestion.get("name", "")).strip()[:100]
+        description = str(suggestion.get("description", "")).strip()[:1000]
+        raw_tags = suggestion.get("tags", [])
+        tags: list[str] = []
+        if isinstance(raw_tags, list):
+            for t in raw_tags[:10]:
+                s = str(t).strip().lstrip("#").lower()
+                if s:
+                    tags.append(s)
+
+        return jsonify({"name": name, "description": description, "tags": tags})
 
     # ------------------------------------------------------------------
     # API: Mixcloud Upload

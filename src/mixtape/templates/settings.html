@@ -66,6 +66,16 @@
                     </div>
                     <p class="setting-help">Authorize this app to upload mixtapes to your Mixcloud account</p>
                 </div>
+
+                <!-- AI section -->
+                <div class="settings-divider"></div>
+                <h3 class="settings-section-title">AI Auto-fill (optional)</h3>
+
+                <div class="setting-group">
+                    <label class="setting-label" for="anthropic-api-key">Anthropic API Key</label>
+                    <input type="password" id="anthropic-api-key" class="setting-input" placeholder="sk-ant-...">
+                    <p class="setting-help">Enables AI-generated name, description, and tags when uploading. Stored locally in <code>.mixtape_config.json</code>, never sent anywhere except the Anthropic API.</p>
+                </div>
             </div>
         </main>
     </div>
@@ -79,6 +89,7 @@
         const clientSecretInput = document.getElementById('mixcloud-client-secret');
         const connectBtn = document.getElementById('btn-mixcloud-connect');
         const mixcloudStatusEl = document.getElementById('mixcloud-status');
+        const anthropicKeyInput = document.getElementById('anthropic-api-key');
 
         // Load current settings
         async function loadSettings() {
@@ -89,6 +100,7 @@
             parseStyleSelect.value = data.parse_style;
             clientIdInput.value = data.mixcloud_client_id || '';
             clientSecretInput.value = data.mixcloud_client_secret || '';
+            anthropicKeyInput.value = data.anthropic_api_key || '';
             updateConnectButton();
             checkMixcloudStatus();
         }
@@ -120,6 +132,7 @@
                     parse_style: parseStyleSelect.value,
                     mixcloud_client_id: clientIdInput.value.trim(),
                     mixcloud_client_secret: clientSecretInput.value.trim(),
+                    anthropic_api_key: anthropicKeyInput.value.trim(),
                 }),
             });
             if (resp.ok) {
@@ -165,6 +178,7 @@
         clientSecretInput.addEventListener('input', updateConnectButton);
         clientIdInput.addEventListener('change', saveSettings);
         clientSecretInput.addEventListener('change', saveSettings);
+        anthropicKeyInput.addEventListener('change', saveSettings);
         connectBtn.addEventListener('click', connectMixcloud);
 
         loadSettings();

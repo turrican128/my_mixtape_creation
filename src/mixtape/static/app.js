@@ -72,6 +72,7 @@
         $trackList.innerHTML = '<div class="loading">Loading tracks…</div>';
         $btnBuild.disabled = true;
         $warningBanner.classList.add("hidden");
+        hideUploadSection();
 
         try {
             const resp = await fetch("/api/tracks");
@@ -323,6 +324,12 @@
         $btnBuild.textContent = "⏳ Building…";
         $buildStatus.textContent = "Starting build…";
         $buildStatus.className = "build-status building";
+        hideUploadSection();
+        // Clear any AI-generated fields from a previous build so the
+        // next modal open triggers a fresh suggestion.
+        if ($uploadName) $uploadName.value = "";
+        if ($uploadDescription) $uploadDescription.value = "";
+        if ($uploadTags) $uploadTags.value = "";
 
         const order = tracks.map((t) => t.file);
         // Build per-transition modes array (one per adjacent pair)
@@ -387,7 +394,6 @@
     // ----------------------------------------------------------------
     // Mixcloud Upload
     // ----------------------------------------------------------------
-    const $uploadTrigger = document.getElementById("upload-trigger");
     const $btnShowUpload = document.getElementById("btn-show-upload");
     const $uploadModal = document.getElementById("upload-modal");
     const $uploadName = document.getElementById("upload-name");
@@ -398,24 +404,72 @@
     const $btnModalCancel = document.getElementById("btn-modal-cancel");
     const $uploadStatus = document.getElementById("upload-status");
 
+    let aiEnabled = false;
+
     async function checkMixcloudConnection() {
         try {
             const data = await api("/api/mixcloud/status");
             mixcloudConnected = data.connected;
+            aiEnabled = !!data.ai_enabled;
         } catch {
             mixcloudConnected = false;
+            aiEnabled = false;
         }
     }
 
     function showUploadSection() {
-        if (!mixcloudConnected || !$uploadTrigger) return;
-        $uploadTrigger.classList.remove("hidden");
+        if (!mixcloudConnected || !$btnShowUpload) return;
+        $btnShowUpload.classList.remove("hidden");
+    }
+
+    function hideUploadSection() {
+        if ($btnShowUpload) $btnShowUpload.classList.add("hidden");
     }
 
     function openUploadModal() {
         $uploadModal.classList.remove("hidden");
         $uploadStatus.textContent = "";
         $uploadStatus.className = "upload-status";
+        // Auto-fill from AI on first open per build, only if fields are empty
+        if (aiEnabled && !$uploadName.value && !$uploadDescription.value && !$uploadTags.value) {
+            autofillFromAI();
+        }
+    }
+
+    async function autofillFromAI() {
+        const prevPlaceholderName = $uploadName.placeholder;
+        const prevPlaceholderDesc = $uploadDescription.placeholder;
+        const prevPlaceholderTags = $uploadTags.placeholder;
+        $uploadName.placeholder = "✨ Generating…";
+        $uploadDescription.placeholder = "✨ Generating description…";
+        $uploadTags.placeholder = "✨ Generating tags…";
+        $uploadName.disabled = true;
+        $uploadDescription.disabled = true;
+        $uploadTags.disabled = true;
+        $uploadStatus.textContent = "✨ Generating suggestions…";
+        $uploadStatus.className = "upload-status building";
+        try {
+            const data = await api("/api/mixcloud/suggest", { method: "POST" });
+            if (data.name && !$uploadName.value) $uploadName.value = data.name;
+            if (data.description && !$uploadDescription.value) {
+                $uploadDescription.value = data.description;
+            }
+            if (Array.isArray(data.tags) && data.tags.length && !$uploadTags.value) {
+                $uploadTags.value = data.tags.join(", ");
+            }
+            $uploadStatus.textContent = "✨ Suggestions filled — edit as you like, then Upload.";
+            $uploadStatus.className = "upload-status success";
+        } catch (err) {
+            $uploadStatus.textContent = `AI fill failed: ${err.message}`;
+            $uploadStatus.className = "upload-status error";
+        } finally {
+            $uploadName.placeholder = prevPlaceholderName;
+            $uploadDescription.placeholder = prevPlaceholderDesc;
+            $uploadTags.placeholder = prevPlaceholderTags;
+            $uploadName.disabled = false;
+            $uploadDescription.disabled = false;
+            $uploadTags.disabled = false;
+        }
     }
 
     function closeUploadModal() {

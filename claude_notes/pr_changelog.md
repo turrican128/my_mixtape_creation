@@ -1,6 +1,6 @@
 # PR & Commit Changelog
 
-## Commit History (as of 2026-04-09)
+## Commit History (as of 2026-04-10)
 
 ### c3e4968 — Initial commit: mixtape builder CLI
 - **Date:** 2026-04-09
@@ -46,3 +46,33 @@
 - Removed all pre-crossfade FX filter application from `_build_filter_complex`
 - Removed `_maybe_fx()` and `should_fx()` functions
 - Transition modes now differentiate solely via `acrossfade` curve selection
+
+### 6f42ac8 — feat: add Mixcloud upload from web UI (PR #6)
+- **Date:** 2026-04-10
+- Mixcloud OAuth flow integrated into the Flask web UI (callback handled at `/api/mixcloud/callback` on the same server)
+- New Settings page section for Mixcloud Client ID / Client Secret with "Connect to Mixcloud" button and live connection status
+- Credentials and access token persisted to `.mixtape_config.json` (gitignored) so they survive server restarts
+- New `/api/mixcloud/auth`, `/api/mixcloud/callback`, `/api/mixcloud/status`, `/api/mixcloud/upload`, `/api/mixcloud/upload/status/<job_id>` endpoints
+- Upload runs in background thread (same pattern as build jobs) with progress polling
+- Tracklist sections auto-populated from `output/tracklist.json` when uploading
+- After a successful build, an "Upload to Mixcloud" trigger appears on the main page (only if connected)
+
+### b2b5a97 — fix: redesign upload UI as a modal popup (PR #7)
+- **Date:** 2026-04-10
+- Replaced the inline upload form with a polished modal dialog
+- Main page now shows a single "☁ Upload to Mixcloud" button after build; clicking it opens the modal
+- Modal contains Mixtape Name, Description, Tags fields + Cancel/Upload footer and inline status line
+- Added modal overlay, blur backdrop, entry animation, and close handlers (X button, Cancel button, overlay click)
+
+### f03580a — feat: add play + delete buttons to track rows (PR #8)
+- **Date:** 2026-04-10
+- **Play button (left of each row):** aesthetic circular button that streams the track via a new `/api/audio/<filename>` Flask endpoint using a shared HTML5 `<audio>` element; toggles ▶ / ⏸ with blue glow when playing; resumes in place when paused and re-clicked
+- **Delete button (right of each row):** removes a track from the playlist only (files on disk are untouched); triggers total-duration recalculation; releases the audio element if the deleted track was loaded
+- Backend `/api/tracks/reorder` and `/api/build` now honor the exact client track list — removed tracks are excluded from the built mixtape; `build_mix()` gained an `include_files` parameter
+- SortableJS drag-and-drop still works — the new buttons are filtered out so clicking them doesn't start a drag
+- **Bug fixes included in the same PR:**
+  - `togglePlay` no longer restarts from the beginning after pause — resumes in place
+  - `reorderTracks` re-renders after the server response so position numbers and start times stay in sync
+  - Added a monotonic `reorderSeq` counter so stale `/api/tracks/reorder` responses can't clobber newer local deletes (fixes a race when clicking delete rapidly)
+  - `deleteTrack` fully releases `audioPlayer.src` via `removeAttribute + load()`, dropping any in-flight fetch
+  - `/api/audio` has an audio-extension whitelist and also rejects double-extension filenames (e.g. `secret.py.mp3`)
