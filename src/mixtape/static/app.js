@@ -13,6 +13,29 @@
     let currentJobId = null;
     let pollTimer = null;
     let mixcloudConnected = false;
+    // Which track filename is loaded in the audio element (playing OR paused).
+    // null = no track loaded.
+    let currentlyPlaying = null;
+    const audioPlayer = new Audio();
+    audioPlayer.preload = "none";
+    audioPlayer.addEventListener("ended", () => {
+        currentlyPlaying = null;
+        updatePlayButtons();
+    });
+    audioPlayer.addEventListener("play", () => updatePlayButtons());
+    audioPlayer.addEventListener("pause", () => updatePlayButtons());
+
+    // Monotonic counter so stale /api/tracks/reorder responses can't
+    // clobber newer local mutations (e.g. rapid successive deletes).
+    let reorderSeq = 0;
+
+    // Fully release the audio element — pause, clear src, load().
+    function clearAudioPlayer() {
+        audioPlayer.pause();
+        audioPlayer.removeAttribute("src");
+        try { audioPlayer.load(); } catch (e) { /* ignore */ }
+        currentlyPlaying = null;
+    }
 
     // ----------------------------------------------------------------
     // DOM references
@@ -114,14 +137,21 @@
                         </select>
                     </div>`;
 
+                const isPlaying = currentlyPlaying === t.file && !audioPlayer.paused;
                 return `
             <div class="track-card" data-file="${escapeAttr(t.file)}">
+                <button class="track-play-btn${isPlaying ? " playing" : ""}" data-file="${escapeAttr(t.file)}" title="${isPlaying ? "Pause" : "Play"}">
+                    ${isPlaying ? "⏸" : "▶"}
+                </button>
                 <div class="track-pos">${i + 1}</div>
                 <div class="track-info">
                     <div class="track-display">${escapeHtml(t.display)}</div>
                     <div class="track-filename">${escapeHtml(t.file)}</div>
                 </div>
                 <div class="track-duration">${t.duration_display || "??"}</div>
+                <button class="track-delete-btn" data-file="${escapeAttr(t.file)}" title="Remove from playlist">
+                    ✕
+                </button>
             </div>${transitionHtml}`;
             })
             .join("");
@@ -133,7 +163,87 @@
             });
         });
 
+        // Attach play button listeners
+        $trackList.querySelectorAll(".track-play-btn").forEach((btn) => {
+            btn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                togglePlay(btn.dataset.file);
+            });
+            // Prevent drag-initiating pointer events on the button from starting a sort
+            btn.addEventListener("pointerdown", (e) => e.stopPropagation());
+            btn.addEventListener("mousedown", (e) => e.stopPropagation());
+        });
+
+        // Attach delete button listeners
+        $trackList.querySelectorAll(".track-delete-btn").forEach((btn) => {
+            btn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                deleteTrack(btn.dataset.file);
+            });
+            btn.addEventListener("pointerdown", (e) => e.stopPropagation());
+            btn.addEventListener("mousedown", (e) => e.stopPropagation());
+        });
+
         initSortable();
+    }
+
+    // ----------------------------------------------------------------
+    // Play / pause
+    // ----------------------------------------------------------------
+    function togglePlay(file) {
+        // Same track already loaded — toggle pause/resume in place
+        if (currentlyPlaying === file) {
+            if (audioPlayer.paused) {
+                audioPlayer.play().catch((err) => {
+                    console.error("Playback failed:", err);
+                });
+            } else {
+                audioPlayer.pause();
+            }
+            return;
+        }
+        // Different track — switch source and play from the start
+        currentlyPlaying = file;
+        audioPlayer.src = `/api/audio/${encodeURIComponent(file)}`;
+        audioPlayer.play().catch((err) => {
+            console.error("Playback failed:", err);
+            currentlyPlaying = null;
+            updatePlayButtons();
+        });
+    }
+
+    function updatePlayButtons() {
+        $trackList.querySelectorAll(".track-play-btn").forEach((btn) => {
+            const isPlaying = currentlyPlaying === btn.dataset.file && !audioPlayer.paused;
+            btn.classList.toggle("playing", isPlaying);
+            btn.textContent = isPlaying ? "⏸" : "▶";
+            btn.title = isPlaying ? "Pause" : "Play";
+        });
+    }
+
+    // ----------------------------------------------------------------
+    // Delete track from playlist (does not delete file on disk)
+    // ----------------------------------------------------------------
+    function deleteTrack(file) {
+        // Fully release the audio element if the deleted track is loaded
+        // (whether playing or paused) — drops any in-flight fetch.
+        if (currentlyPlaying === file) {
+            clearAudioPlayer();
+        }
+        tracks = tracks.filter((t) => t.file !== file);
+        delete transitionModes[file];
+
+        if (tracks.length === 0) {
+            renderTracks();
+            updateSummary("--:--", 0);
+            $btnBuild.disabled = true;
+            return;
+        }
+
+        // Render immediately for fast feedback, then sync with server
+        // (reorderTracks will re-render with server-recomputed data).
+        renderTracks();
+        reorderTracks();
     }
 
     // ----------------------------------------------------------------
@@ -148,6 +258,8 @@
             animation: 200,
             handle: ".track-card",
             draggable: ".track-card",
+            filter: ".track-play-btn, .track-delete-btn",
+            preventOnFilter: false,
             ghostClass: "sortable-ghost",
             chosenClass: "sortable-chosen",
             dragClass: "sortable-drag",
@@ -174,13 +286,20 @@
     // ----------------------------------------------------------------
     async function reorderTracks() {
         const order = tracks.map((t) => t.file);
+        const seq = ++reorderSeq;
         try {
             const data = await api("/api/tracks/reorder", {
                 method: "POST",
                 body: JSON.stringify({ order }),
             });
+            // Drop stale responses: if another reorder/delete happened
+            // after this request was sent, its mutation is authoritative.
+            if (seq !== reorderSeq) return;
             tracks = data.tracks;
             updateSummary(data.total_duration_display, tracks.length);
+            // Re-render so position numbers and server-recomputed data
+            // (start times, etc.) stay in sync with the cards.
+            renderTracks();
         } catch (err) {
             console.error("Reorder failed:", err);
         }

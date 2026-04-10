@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import requests as http_requests
-from flask import Flask, jsonify, redirect, render_template, request
+from flask import Flask, jsonify, redirect, render_template, request, send_from_directory
 
 from .tracklist import (
     Track,
@@ -174,6 +174,26 @@ def create_app(input_dir: Path | None = None) -> Flask:
         return resp
 
     # ------------------------------------------------------------------
+    # API: Stream audio file (for in-browser playback)
+    # ------------------------------------------------------------------
+
+    _AUDIO_EXTS = {".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg"}
+
+    @app.route("/api/audio/<path:filename>", methods=["GET"])
+    def api_audio(filename: str):
+        # Only serve files with recognized audio extensions.
+        # send_from_directory handles traversal protection above the base.
+        p = Path(filename)
+        if p.suffix.lower() not in _AUDIO_EXTS:
+            return jsonify({"error": "Not an audio file"}), 400
+        # Reject double extensions like "secret.py.mp3" — the stem must
+        # not itself contain a dot.
+        if "." in p.stem:
+            return jsonify({"error": "Invalid filename"}), 400
+        input_dir: Path = app.config["INPUT_DIR"]
+        return send_from_directory(input_dir.resolve(), filename, conditional=True)
+
+    # ------------------------------------------------------------------
     # API: Reorder tracks
     # ------------------------------------------------------------------
 
@@ -202,12 +222,9 @@ def create_app(input_dir: Path | None = None) -> Flask:
             key = fname.lower()
             if key in by_name:
                 reordered.append(by_name[key])
-
-        # Add any tracks not in the order list (preserving original sort)
-        included = {fname.lower() for fname in ordered_files}
-        for tr in tracks:
-            if tr.path.name.lower() not in included:
-                reordered.append(tr)
+        # Note: tracks not in the order list are intentionally excluded
+        # so the client can remove tracks from the playlist without
+        # deleting them from the source folder.
 
         # Probe durations
         probed: list[Track] = []
@@ -312,10 +329,8 @@ def create_app(input_dir: Path | None = None) -> Flask:
                     key = fname.lower()
                     if key in by_name:
                         ordered.append(by_name[key])
-                included = {fname.lower() for fname in order}
-                for tr in tracks:
-                    if tr.path.name.lower() not in included:
-                        ordered.append(tr)
+                # Tracks not in `order` are intentionally excluded
+                # (user removed them from the playlist).
 
                 out_mp3 = Path("output") / "mixtape.mp3"
                 tracklist_txt = Path("output") / "tracklist.txt"
@@ -337,6 +352,7 @@ def create_app(input_dir: Path | None = None) -> Flask:
                     first_track=order[0] if order else None,
                     dry_run=False,
                     transition_modes=transition_modes if transition_modes else None,
+                    include_files=order if order else None,
                 )
 
                 if rc == 0:
