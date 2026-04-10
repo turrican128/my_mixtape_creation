@@ -13,17 +13,17 @@
     let currentJobId = null;
     let pollTimer = null;
     let mixcloudConnected = false;
-    let currentlyPlaying = null; // filename currently playing, or null
+    // Which track filename is loaded in the audio element (playing OR paused).
+    // null = no track loaded.
+    let currentlyPlaying = null;
     const audioPlayer = new Audio();
     audioPlayer.preload = "none";
     audioPlayer.addEventListener("ended", () => {
         currentlyPlaying = null;
         updatePlayButtons();
     });
-    audioPlayer.addEventListener("pause", () => {
-        if (audioPlayer.ended) return;
-        // Manual pause — keep currentlyPlaying to show correct state
-    });
+    audioPlayer.addEventListener("play", () => updatePlayButtons());
+    audioPlayer.addEventListener("pause", () => updatePlayButtons());
 
     // ----------------------------------------------------------------
     // DOM references
@@ -179,17 +179,21 @@
     // Play / pause
     // ----------------------------------------------------------------
     function togglePlay(file) {
-        if (currentlyPlaying === file && !audioPlayer.paused) {
-            audioPlayer.pause();
-            currentlyPlaying = null;
-            updatePlayButtons();
+        // Same track already loaded — toggle pause/resume in place
+        if (currentlyPlaying === file) {
+            if (audioPlayer.paused) {
+                audioPlayer.play().catch((err) => {
+                    console.error("Playback failed:", err);
+                });
+            } else {
+                audioPlayer.pause();
+            }
             return;
         }
+        // Different track — switch source and play from the start
+        currentlyPlaying = file;
         audioPlayer.src = `/api/audio/${encodeURIComponent(file)}`;
-        audioPlayer.play().then(() => {
-            currentlyPlaying = file;
-            updatePlayButtons();
-        }).catch((err) => {
+        audioPlayer.play().catch((err) => {
             console.error("Playback failed:", err);
             currentlyPlaying = null;
             updatePlayButtons();
@@ -206,25 +210,28 @@
     }
 
     // ----------------------------------------------------------------
-    // Delete track from playlist (does not delete file)
+    // Delete track from playlist (does not delete file on disk)
     // ----------------------------------------------------------------
     function deleteTrack(file) {
-        // Stop playback if deleting the currently-playing track
+        // Stop playback if deleting the currently-loaded track
         if (currentlyPlaying === file) {
             audioPlayer.pause();
-            audioPlayer.src = "";
             currentlyPlaying = null;
         }
         tracks = tracks.filter((t) => t.file !== file);
         delete transitionModes[file];
-        renderTracks();
-        // Re-send order to backend to recompute total duration
-        if (tracks.length > 0) {
-            reorderTracks();
-        } else {
+
+        if (tracks.length === 0) {
+            renderTracks();
             updateSummary("--:--", 0);
             $btnBuild.disabled = true;
+            return;
         }
+
+        // Render immediately for fast feedback, then sync with server
+        // (reorderTracks will re-render with server-recomputed data).
+        renderTracks();
+        reorderTracks();
     }
 
     // ----------------------------------------------------------------
@@ -274,6 +281,9 @@
             });
             tracks = data.tracks;
             updateSummary(data.total_duration_display, tracks.length);
+            // Re-render so position numbers and server-recomputed data
+            // (start times, etc.) stay in sync with the cards.
+            renderTracks();
         } catch (err) {
             console.error("Reorder failed:", err);
         }

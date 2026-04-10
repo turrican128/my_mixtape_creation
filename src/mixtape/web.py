@@ -177,10 +177,15 @@ def create_app(input_dir: Path | None = None) -> Flask:
     # API: Stream audio file (for in-browser playback)
     # ------------------------------------------------------------------
 
+    _AUDIO_EXTS = {".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg"}
+
     @app.route("/api/audio/<path:filename>", methods=["GET"])
     def api_audio(filename: str):
+        # Only serve files with recognized audio extensions.
+        # send_from_directory handles traversal protection above the base.
+        if Path(filename).suffix.lower() not in _AUDIO_EXTS:
+            return jsonify({"error": "Not an audio file"}), 400
         input_dir: Path = app.config["INPUT_DIR"]
-        # send_from_directory handles path traversal safely
         return send_from_directory(input_dir.resolve(), filename, conditional=True)
 
     # ------------------------------------------------------------------
