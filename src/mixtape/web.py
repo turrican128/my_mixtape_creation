@@ -724,7 +724,11 @@ def create_app(input_dir: Path | None = None) -> Flask:
         description = str(data.get("description", ""))[:1000]
         tags: list[str] = data.get("tags", [])
         cover_preset = str(data.get("cover_preset", "neon")).strip() or "neon"
-        cover_text_scale = _resolve_text_scale(str(data.get("text_size", "medium")))
+        # Pass the raw value through — _resolve_text_scale handles None,
+        # empty strings, and unknown values uniformly. Wrapping with str()
+        # would turn a JSON null into the literal "None", which is harmless
+        # today but silently diverges from how /api/cover/preview does it.
+        cover_text_scale = _resolve_text_scale(data.get("text_size"))
 
         mp3_path = Path("output") / "mixtape.mp3"
         tracklist_json_path = Path("output") / "tracklist.json"
