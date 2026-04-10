@@ -663,7 +663,10 @@ def create_app(input_dir: Path | None = None) -> Flask:
           - title:  the mixtape title to overlay (required)
           - preset: one of cover.PRESETS (default 'neon')
         """
-        title = request.args.get("title", "").strip()
+        # Cap title at 200 chars to bound work inside the cover generator's
+        # auto-wrap / auto-fit loop — otherwise an adversarial huge title
+        # would cause the preview request to hang.
+        title = request.args.get("title", "").strip()[:200]
         preset = request.args.get("preset", "neon").strip() or "neon"
         if not title:
             return jsonify({"error": "title is required"}), 400
@@ -699,10 +702,12 @@ def create_app(input_dir: Path | None = None) -> Flask:
         if not access_token:
             return jsonify({"error": "Not connected to Mixcloud. Go to Settings to connect."}), 400
         data = request.get_json(force=True)
-        name = data.get("name", "").strip()
+        # Cap name at 200 chars to match Mixcloud's own limit and to bound
+        # work inside the cover generator's auto-wrap / auto-fit loop.
+        name = data.get("name", "").strip()[:200]
         if not name:
             return jsonify({"error": "Mixtape name is required"}), 400
-        description = data.get("description", "")
+        description = str(data.get("description", ""))[:1000]
         tags: list[str] = data.get("tags", [])
         cover_preset = str(data.get("cover_preset", "neon")).strip() or "neon"
 
@@ -764,9 +769,14 @@ def create_app(input_dir: Path | None = None) -> Flask:
                         cover_path = None
 
                 _upload_jobs[job_id]["progress"] = "Uploading to Mixcloud..."
-                mp3_f = mp3_path.open("rb")
-                cover_f = cover_path.open("rb") if cover_path is not None else None
+                mp3_f = None
+                cover_f = None
                 try:
+                    # Open both file handles inside the try so a failure
+                    # on the second open cannot leak the first.
+                    mp3_f = mp3_path.open("rb")
+                    if cover_path is not None:
+                        cover_f = cover_path.open("rb")
                     files: dict[str, tuple[str, Any, str]] = {
                         "mp3": (mp3_path.name, mp3_f, "audio/mpeg"),
                     }
@@ -774,7 +784,8 @@ def create_app(input_dir: Path | None = None) -> Flask:
                         files["picture"] = (cover_path.name, cover_f, "image/jpeg")
                     r = http_requests.post(url, data=form_data, files=files, timeout=60 * 30)
                 finally:
-                    mp3_f.close()
+                    if mp3_f is not None:
+                        mp3_f.close()
                     if cover_f is not None:
                         cover_f.close()
                 r.raise_for_status()
@@ -787,9 +798,27 @@ def create_app(input_dir: Path | None = None) -> Flask:
                 _upload_jobs[job_id]["status"] = "done"
                 _upload_jobs[job_id]["progress"] = "Upload complete!"
                 _upload_jobs[job_id]["mixcloud_url"] = mixcloud_url
-            except Exception as exc:
+            except http_requests.HTTPError as exc:
+                # The upload URL embeds the access token as a query
+                # parameter, and HTTPError's str() includes the full URL.
+                # Log the details server-side and return only the status
+                # code to the client so the token cannot leak into the
+                # upload-status polling response.
+                status_code = exc.response.status_code if exc.response is not None else 0
+                body = exc.response.text[:500] if exc.response is not None else ""
+                logging.getLogger(__name__).warning(
+                    "Mixcloud upload HTTP %s: %s", status_code, body
+                )
                 _upload_jobs[job_id]["status"] = "error"
-                _upload_jobs[job_id]["error"] = str(exc)
+                _upload_jobs[job_id]["error"] = (
+                    f"Mixcloud upload failed (HTTP {status_code})"
+                )
+            except Exception:
+                # Same rationale — any exception raised while `url` is
+                # in scope could stringify to include the token.
+                logging.getLogger(__name__).exception("Mixcloud upload failed")
+                _upload_jobs[job_id]["status"] = "error"
+                _upload_jobs[job_id]["error"] = "Mixcloud upload failed"
 
         thread = threading.Thread(target=_run_upload, daemon=True)
         thread.start()
