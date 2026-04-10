@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import requests as http_requests
-from flask import Flask, jsonify, redirect, render_template, request, send_from_directory
+from flask import Flask, jsonify, redirect, render_template, request, send_file, send_from_directory
 
 from .tracklist import (
     Track,
@@ -21,6 +21,7 @@ from .tracklist import (
     discover_tracks,
 )
 from .audio import build_mix, probe_duration_seconds
+from . import cover as cover_mod
 
 # ---------------------------------------------------------------------------
 # Global build-job registry (in-process; fine for single-user desktop tool)
@@ -31,6 +32,13 @@ _build_jobs: dict[str, dict[str, Any]] = {}
 # Upload-job registry (same pattern as build jobs)
 # ---------------------------------------------------------------------------
 _upload_jobs: dict[str, dict[str, Any]] = {}
+
+# ---------------------------------------------------------------------------
+# Cover art
+# ---------------------------------------------------------------------------
+#: User drops their base image here (see cover/README.md). Relative to the
+#: process working directory.
+_COVER_DIR = Path("cover")
 
 # ---------------------------------------------------------------------------
 # Config file for persistent settings (credentials, etc.)
@@ -634,6 +642,54 @@ def create_app(input_dir: Path | None = None) -> Flask:
         return jsonify({"name": name, "description": description, "tags": tags})
 
     # ------------------------------------------------------------------
+    # API: Cover art
+    # ------------------------------------------------------------------
+
+    @app.route("/api/cover/status", methods=["GET"])
+    def api_cover_status():
+        """Report whether a base image has been dropped into cover/."""
+        base = cover_mod.find_base_image(_COVER_DIR)
+        return jsonify({
+            "has_base": base is not None,
+            "base_filename": base.name if base is not None else None,
+            "presets": list(cover_mod.PRESETS),
+        })
+
+    @app.route("/api/cover/preview", methods=["GET"])
+    def api_cover_preview():
+        """Render a cover preview and stream it back as a JPEG.
+
+        Query params:
+          - title:  the mixtape title to overlay (required)
+          - preset: one of cover.PRESETS (default 'neon')
+        """
+        title = request.args.get("title", "").strip()
+        preset = request.args.get("preset", "neon").strip() or "neon"
+        if not title:
+            return jsonify({"error": "title is required"}), 400
+
+        base = cover_mod.find_base_image(_COVER_DIR)
+        if base is None:
+            return jsonify({
+                "error": "No base image. Drop a cover_base.jpg/.png into the cover/ folder.",
+            }), 404
+
+        # Flask's send_file resolves relative paths against the app's
+        # root_path (the package directory), not cwd — pass an absolute
+        # path so it picks up the file we actually just wrote.
+        preview_path = (Path("output") / "cover_preview.jpg").resolve()
+        try:
+            cover_mod.generate_cover(base, title, preset, preview_path)
+        except Exception:
+            logging.getLogger(__name__).exception("cover preview failed")
+            return jsonify({"error": "Cover rendering failed"}), 500
+
+        resp = send_file(str(preview_path), mimetype="image/jpeg", max_age=0)
+        # Disable caching so the modal preview updates as title/preset change.
+        resp.headers["Cache-Control"] = "no-store, max-age=0"
+        return resp
+
+    # ------------------------------------------------------------------
     # API: Mixcloud Upload
     # ------------------------------------------------------------------
 
@@ -648,6 +704,7 @@ def create_app(input_dir: Path | None = None) -> Flask:
             return jsonify({"error": "Mixtape name is required"}), 400
         description = data.get("description", "")
         tags: list[str] = data.get("tags", [])
+        cover_preset = str(data.get("cover_preset", "neon")).strip() or "neon"
 
         mp3_path = Path("output") / "mixtape.mp3"
         tracklist_json_path = Path("output") / "tracklist.json"
@@ -692,10 +749,34 @@ def create_app(input_dir: Path | None = None) -> Flask:
                                 form_data[f"sections-{i}-song"] = song
                             form_data[f"sections-{i}-start_time"] = str(start_i)
 
+                # Generate cover art if a base image exists. Failure here
+                # is logged but does not abort the upload — we just send
+                # without a picture (old behavior).
+                cover_path: Path | None = None
+                base_image = cover_mod.find_base_image(_COVER_DIR)
+                if base_image is not None:
+                    _upload_jobs[job_id]["progress"] = "Rendering cover art..."
+                    try:
+                        cover_path = Path("output") / "cover.jpg"
+                        cover_mod.generate_cover(base_image, name, cover_preset, cover_path)
+                    except Exception:
+                        logging.getLogger(__name__).exception("cover generation failed; uploading without picture")
+                        cover_path = None
+
                 _upload_jobs[job_id]["progress"] = "Uploading to Mixcloud..."
-                with mp3_path.open("rb") as f:
-                    files = {"mp3": (mp3_path.name, f, "audio/mpeg")}
+                mp3_f = mp3_path.open("rb")
+                cover_f = cover_path.open("rb") if cover_path is not None else None
+                try:
+                    files: dict[str, tuple[str, Any, str]] = {
+                        "mp3": (mp3_path.name, mp3_f, "audio/mpeg"),
+                    }
+                    if cover_f is not None:
+                        files["picture"] = (cover_path.name, cover_f, "image/jpeg")
                     r = http_requests.post(url, data=form_data, files=files, timeout=60 * 30)
+                finally:
+                    mp3_f.close()
+                    if cover_f is not None:
+                        cover_f.close()
                 r.raise_for_status()
                 resp = r.json()
                 result_url = resp.get("result", {}).get("key", "")

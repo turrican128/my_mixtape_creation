@@ -405,8 +405,14 @@
     const $btnModalClose = document.getElementById("btn-modal-close");
     const $btnModalCancel = document.getElementById("btn-modal-cancel");
     const $uploadStatus = document.getElementById("upload-status");
+    const $coverPreset = document.getElementById("cover-preset");
+    const $coverPreview = document.getElementById("cover-preview");
+    const $coverPreviewPlaceholder = document.getElementById("cover-preview-placeholder");
+    const $coverBaseNote = document.getElementById("cover-base-note");
 
     let aiEnabled = false;
+    let coverBaseAvailable = false;
+    let coverPreviewTimer = null;
 
     async function checkMixcloudConnection() {
         try {
@@ -435,10 +441,68 @@
         // Refresh connection/AI state in case the user added the API key
         // or connected Mixcloud in Settings after this page loaded.
         await checkMixcloudConnection();
+        await checkCoverStatus();
         // Auto-fill from AI on first open per build, only if fields are empty
         if (aiEnabled && !$uploadName.value && !$uploadDescription.value && !$uploadTags.value) {
-            autofillFromAI();
+            await autofillFromAI();
         }
+        // Render an initial preview if we have a title and a base image.
+        schedulePreviewRefresh(0);
+    }
+
+    async function checkCoverStatus() {
+        try {
+            const data = await api("/api/cover/status");
+            coverBaseAvailable = !!data.has_base;
+            if (coverBaseAvailable) {
+                $coverBaseNote.textContent = `using ${data.base_filename}`;
+                $coverBaseNote.className = "cover-base-note ok";
+            } else {
+                $coverBaseNote.textContent = "No base image — drop one into cover/ to enable cover art";
+                $coverBaseNote.className = "cover-base-note missing";
+            }
+        } catch {
+            coverBaseAvailable = false;
+            $coverBaseNote.textContent = "";
+            $coverBaseNote.className = "cover-base-note";
+        }
+    }
+
+    function schedulePreviewRefresh(delay = 450) {
+        if (coverPreviewTimer) clearTimeout(coverPreviewTimer);
+        coverPreviewTimer = setTimeout(refreshCoverPreview, delay);
+    }
+
+    function refreshCoverPreview() {
+        if (!coverBaseAvailable) {
+            $coverPreview.classList.add("hidden");
+            $coverPreviewPlaceholder.classList.remove("hidden");
+            $coverPreviewPlaceholder.textContent =
+                "Drop a cover_base.jpg/.png into the cover/ folder to enable preview";
+            return;
+        }
+        const title = ($uploadName.value || "").trim();
+        if (!title) {
+            $coverPreview.classList.add("hidden");
+            $coverPreviewPlaceholder.classList.remove("hidden");
+            $coverPreviewPlaceholder.textContent =
+                "Enter a mixtape name to see the cover preview";
+            return;
+        }
+        const preset = $coverPreset.value || "neon";
+        // Cache-bust with a counter so the browser re-fetches on each change.
+        const bust = Date.now();
+        const url = `/api/cover/preview?title=${encodeURIComponent(title)}&preset=${encodeURIComponent(preset)}&_=${bust}`;
+        $coverPreview.onload = () => {
+            $coverPreview.classList.remove("hidden");
+            $coverPreviewPlaceholder.classList.add("hidden");
+        };
+        $coverPreview.onerror = () => {
+            $coverPreview.classList.add("hidden");
+            $coverPreviewPlaceholder.classList.remove("hidden");
+            $coverPreviewPlaceholder.textContent = "Cover preview failed to render";
+        };
+        $coverPreview.src = url;
     }
 
     async function autofillFromAI() {
@@ -504,6 +568,7 @@
                     name,
                     description: $uploadDescription.value.trim(),
                     tags,
+                    cover_preset: $coverPreset.value || "neon",
                 }),
             });
             pollUploadStatus(data.job_id);
@@ -578,6 +643,9 @@
     if ($uploadModal) $uploadModal.addEventListener("click", (e) => {
         if (e.target === $uploadModal) closeUploadModal();
     });
+    // Cover preview: debounced refresh on title changes, immediate on preset change.
+    if ($uploadName) $uploadName.addEventListener("input", () => schedulePreviewRefresh());
+    if ($coverPreset) $coverPreset.addEventListener("change", () => schedulePreviewRefresh(0));
 
     // ----------------------------------------------------------------
     // Initialize

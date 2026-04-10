@@ -14,3 +14,8 @@ __pycache__/
 Music for mixtape/*
 !Music for mixtape/.gitkeep
 
+# User-provided cover art base image (large binary); drop your own after clone
+cover/*
+!cover/.gitkeep
+!cover/README.md
+
