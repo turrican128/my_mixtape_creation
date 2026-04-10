@@ -40,6 +40,17 @@ _upload_jobs: dict[str, dict[str, Any]] = {}
 #: process working directory.
 _COVER_DIR = Path("cover")
 
+#: Mapping from the UI-level text size string to the multiplier cover.py
+#: applies to the preset's starting font size. Medium (1.0) preserves the
+#: original "auto-fit as large as possible" behavior.
+_TEXT_SIZE_SCALES = {"small": 0.65, "medium": 1.0, "large": 1.15}
+
+
+def _resolve_text_scale(raw: str | None) -> float:
+    """Map a UI text-size string to a float scale; unknown -> 1.0."""
+    key = (raw or "medium").strip().lower()
+    return _TEXT_SIZE_SCALES.get(key, 1.0)
+
 # ---------------------------------------------------------------------------
 # Config file for persistent settings (credentials, etc.)
 # ---------------------------------------------------------------------------
@@ -660,14 +671,16 @@ def create_app(input_dir: Path | None = None) -> Flask:
         """Render a cover preview and stream it back as a JPEG.
 
         Query params:
-          - title:  the mixtape title to overlay (required)
-          - preset: one of cover.PRESETS (default 'neon')
+          - title:      the mixtape title to overlay (required)
+          - preset:     one of cover.PRESETS (default 'neon')
+          - text_size:  'small' | 'medium' | 'large' (default 'medium')
         """
         # Cap title at 200 chars to bound work inside the cover generator's
         # auto-wrap / auto-fit loop — otherwise an adversarial huge title
         # would cause the preview request to hang.
         title = request.args.get("title", "").strip()[:200]
         preset = request.args.get("preset", "neon").strip() or "neon"
+        text_scale = _resolve_text_scale(request.args.get("text_size"))
         if not title:
             return jsonify({"error": "title is required"}), 400
 
@@ -682,7 +695,8 @@ def create_app(input_dir: Path | None = None) -> Flask:
         # path so it picks up the file we actually just wrote.
         preview_path = (Path("output") / "cover_preview.jpg").resolve()
         try:
-            cover_mod.generate_cover(base, title, preset, preview_path)
+            cover_mod.generate_cover(base, title, preset, preview_path,
+                                     text_scale=text_scale)
         except Exception:
             logging.getLogger(__name__).exception("cover preview failed")
             return jsonify({"error": "Cover rendering failed"}), 500
@@ -710,6 +724,11 @@ def create_app(input_dir: Path | None = None) -> Flask:
         description = str(data.get("description", ""))[:1000]
         tags: list[str] = data.get("tags", [])
         cover_preset = str(data.get("cover_preset", "neon")).strip() or "neon"
+        # Pass the raw value through — _resolve_text_scale handles None,
+        # empty strings, and unknown values uniformly. Wrapping with str()
+        # would turn a JSON null into the literal "None", which is harmless
+        # today but silently diverges from how /api/cover/preview does it.
+        cover_text_scale = _resolve_text_scale(data.get("text_size"))
 
         mp3_path = Path("output") / "mixtape.mp3"
         tracklist_json_path = Path("output") / "tracklist.json"
@@ -763,7 +782,8 @@ def create_app(input_dir: Path | None = None) -> Flask:
                     _upload_jobs[job_id]["progress"] = "Rendering cover art..."
                     try:
                         cover_path = Path("output") / "cover.jpg"
-                        cover_mod.generate_cover(base_image, name, cover_preset, cover_path)
+                        cover_mod.generate_cover(base_image, name, cover_preset, cover_path,
+                                                 text_scale=cover_text_scale)
                     except Exception:
                         logging.getLogger(__name__).exception("cover generation failed; uploading without picture")
                         cover_path = None

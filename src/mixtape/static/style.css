@@ -724,6 +724,9 @@ input[type="range"]::-moz-range-thumb {
 }
 
 /* Cover art preset + preview */
+.cover-text-size-label {
+    margin-top: 10px;
+}
 .cover-base-note {
     margin-left: 8px;
     font-weight: 400;
