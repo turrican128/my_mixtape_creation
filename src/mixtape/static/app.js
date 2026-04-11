@@ -596,9 +596,13 @@
                     } else {
                         $uploadStatus.textContent = "Upload complete!";
                     }
-                    $uploadStatus.className = "upload-status success";
-                    $btnUpload.disabled = false;
-                    $btnUpload.textContent = "☁ Upload to Mixcloud";
+                    $uploadStatus.className = "upload-status success upload-done";
+                    $btnUpload.disabled = true;
+                    $btnUpload.textContent = "✓ Uploaded";
+                    if ($btnShowUpload) {
+                        $btnShowUpload.disabled = true;
+                        $btnShowUpload.title = "Already uploaded this session";
+                    }
                 } else if (data.status === "error") {
                     clearInterval(timer);
                     $uploadStatus.textContent = `Error: ${data.error}`;
