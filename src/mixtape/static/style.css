@@ -478,6 +478,31 @@ body {
     color: var(--green);
 }
 
+.settings-status.unsaved {
+    color: var(--orange);
+}
+
+.settings-status.error {
+    color: var(--red);
+}
+
+.settings-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.settings-actions .settings-status {
+    margin-top: 0;
+    text-align: left;
+}
+
+.settings-actions-buttons {
+    display: flex;
+    gap: 10px;
+    margin-left: auto;
+}
+
 .setting-group {
     margin-bottom: 20px;
 }

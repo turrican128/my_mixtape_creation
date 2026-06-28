@@ -15,7 +15,7 @@
                 <h1>Settings</h1>
             </div>
             <div class="header-info">
-                <a href="/" class="btn btn-sm btn-secondary">&larr; Back</a>
+                <a href="/" class="btn btn-sm btn-secondary" id="btn-back">&larr; Back</a>
             </div>
         </header>
 
@@ -42,9 +42,6 @@
                     <p class="setting-help">How to extract artist and title from filenames</p>
                 </div>
 
-                <!-- Save status -->
-                <div class="settings-status" id="settings-status"></div>
-
                 <!-- Mixcloud section -->
                 <div class="settings-divider"></div>
                 <h3 class="settings-section-title">Mixcloud</h3>
@@ -64,7 +61,7 @@
                         <button class="btn btn-primary" id="btn-mixcloud-connect" disabled>Connect to Mixcloud</button>
                         <span class="mixcloud-status" id="mixcloud-status"></span>
                     </div>
-                    <p class="setting-help">Authorize this app to upload mixtapes to your Mixcloud account</p>
+                    <p class="setting-help">Authorize this app to upload mixtapes to your Mixcloud account. Saves your credentials first.</p>
                 </div>
 
                 <!-- AI section -->
@@ -76,8 +73,35 @@
                     <input type="password" id="anthropic-api-key" class="setting-input" placeholder="sk-ant-...">
                     <p class="setting-help">Enables AI-generated name, description, and tags when uploading. Stored locally in <code>.mixtape_config.json</code>, never sent anywhere except the Anthropic API.</p>
                 </div>
+
+                <!-- Save / Cancel actions -->
+                <div class="settings-divider"></div>
+                <div class="settings-actions">
+                    <span class="settings-status" id="settings-status"></span>
+                    <div class="settings-actions-buttons">
+                        <button class="btn btn-secondary" id="btn-cancel">Cancel</button>
+                        <button class="btn btn-primary" id="btn-save">Save</button>
+                    </div>
+                </div>
             </div>
         </main>
+    </div>
+
+    <!-- Discard-changes confirm modal -->
+    <div class="modal-overlay hidden" id="confirm-modal">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <h2>Discard changes?</h2>
+                <button class="modal-close" id="confirm-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="confirm-message">You have unsaved changes. Leave without saving?</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="confirm-cancel">Stay</button>
+                <button class="btn btn-danger" id="confirm-ok">Discard</button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -90,8 +114,22 @@
         const connectBtn = document.getElementById('btn-mixcloud-connect');
         const mixcloudStatusEl = document.getElementById('mixcloud-status');
         const anthropicKeyInput = document.getElementById('anthropic-api-key');
+        const saveBtn = document.getElementById('btn-save');
+        const cancelBtn = document.getElementById('btn-cancel');
+        const backLink = document.getElementById('btn-back');
 
-        // Load current settings
+        // Track unsaved edits so we can warn before leaving.
+        let dirty = false;
+        let allowLeave = false;
+        function markDirty() {
+            dirty = true;
+            statusEl.textContent = 'Unsaved changes';
+            statusEl.className = 'settings-status unsaved';
+        }
+        function clearDirty() { dirty = false; }
+
+        // Load current settings (programmatic value sets don't fire input
+        // events, so this does not mark the form dirty).
         async function loadSettings() {
             const resp = await fetch('/api/settings');
             const data = await resp.json();
@@ -124,26 +162,43 @@
         }
 
         async function saveSettings() {
-            const resp = await fetch('/api/settings', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    crossfade_s: parseFloat(crossfadeInput.value),
-                    parse_style: parseStyleSelect.value,
-                    mixcloud_client_id: clientIdInput.value.trim(),
-                    mixcloud_client_secret: clientSecretInput.value.trim(),
-                    anthropic_api_key: anthropicKeyInput.value.trim(),
-                }),
-            });
-            if (resp.ok) {
-                statusEl.textContent = 'Settings saved';
-                statusEl.className = 'settings-status saved';
-                setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'settings-status'; }, 2000);
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving…';
+            try {
+                const resp = await fetch('/api/settings', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        crossfade_s: parseFloat(crossfadeInput.value),
+                        parse_style: parseStyleSelect.value,
+                        mixcloud_client_id: clientIdInput.value.trim(),
+                        mixcloud_client_secret: clientSecretInput.value.trim(),
+                        anthropic_api_key: anthropicKeyInput.value.trim(),
+                    }),
+                });
+                if (resp.ok) {
+                    clearDirty();
+                    statusEl.textContent = 'Settings saved ✓';
+                    statusEl.className = 'settings-status saved';
+                    return true;
+                }
+                statusEl.textContent = 'Save failed';
+                statusEl.className = 'settings-status error';
+                return false;
+            } catch (e) {
+                statusEl.textContent = 'Save failed: ' + e.message;
+                statusEl.className = 'settings-status error';
+                return false;
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Save';
             }
         }
 
         async function connectMixcloud() {
-            await saveSettings();
+            // Connecting needs the credentials persisted server-side first.
+            const ok = await saveSettings();
+            if (!ok) return;
             const resp = await fetch('/api/mixcloud/auth');
             const data = await resp.json();
             if (data.error) {
@@ -154,7 +209,6 @@
             window.open(data.auth_url, '_blank');
             mixcloudStatusEl.textContent = 'Waiting for authorization...';
             mixcloudStatusEl.className = 'mixcloud-status pending';
-            // Poll for connection status
             const poll = setInterval(async () => {
                 const sr = await fetch('/api/mixcloud/status');
                 const sd = await sr.json();
@@ -165,21 +219,67 @@
                     connectBtn.textContent = 'Reconnect';
                 }
             }, 2000);
-            // Stop polling after 3 minutes
             setTimeout(() => clearInterval(poll), 180000);
         }
 
+        // Styled "discard changes?" confirm (reuses shared modal styles).
+        function confirmDiscard() {
+            const modal = document.getElementById('confirm-modal');
+            const ok = document.getElementById('confirm-ok');
+            const cancel = document.getElementById('confirm-cancel');
+            const close = document.getElementById('confirm-close');
+            return new Promise((resolve) => {
+                modal.classList.remove('hidden');
+                ok.focus();
+                function cleanup(result) {
+                    modal.classList.add('hidden');
+                    ok.removeEventListener('click', onOk);
+                    cancel.removeEventListener('click', onCancel);
+                    close.removeEventListener('click', onCancel);
+                    modal.removeEventListener('click', onOverlay);
+                    document.removeEventListener('keydown', onKey);
+                    resolve(result);
+                }
+                function onOk() { cleanup(true); }
+                function onCancel() { cleanup(false); }
+                function onOverlay(e) { if (e.target === modal) cleanup(false); }
+                function onKey(e) {
+                    if (e.key === 'Escape') cleanup(false);
+                    else if (e.key === 'Enter') cleanup(true);
+                }
+                ok.addEventListener('click', onOk);
+                cancel.addEventListener('click', onCancel);
+                close.addEventListener('click', onCancel);
+                modal.addEventListener('click', onOverlay);
+                document.addEventListener('keydown', onKey);
+            });
+        }
+
+        async function tryLeave() {
+            if (!dirty) { allowLeave = true; window.location.href = '/'; return; }
+            const discard = await confirmDiscard();
+            if (discard) { allowLeave = true; window.location.href = '/'; }
+        }
+
+        // Field edits mark the form dirty (replaces the old auto-save).
         crossfadeInput.addEventListener('input', () => {
             crossfadeValue.textContent = parseFloat(crossfadeInput.value).toFixed(1) + 's';
+            markDirty();
         });
-        crossfadeInput.addEventListener('change', saveSettings);
-        parseStyleSelect.addEventListener('change', saveSettings);
-        clientIdInput.addEventListener('input', updateConnectButton);
-        clientSecretInput.addEventListener('input', updateConnectButton);
-        clientIdInput.addEventListener('change', saveSettings);
-        clientSecretInput.addEventListener('change', saveSettings);
-        anthropicKeyInput.addEventListener('change', saveSettings);
+        parseStyleSelect.addEventListener('change', markDirty);
+        clientIdInput.addEventListener('input', () => { updateConnectButton(); markDirty(); });
+        clientSecretInput.addEventListener('input', () => { updateConnectButton(); markDirty(); });
+        anthropicKeyInput.addEventListener('input', markDirty);
+
+        saveBtn.addEventListener('click', saveSettings);
+        cancelBtn.addEventListener('click', tryLeave);
+        backLink.addEventListener('click', (e) => { e.preventDefault(); tryLeave(); });
         connectBtn.addEventListener('click', connectMixcloud);
+
+        // Safety net for tab close / refresh / hard navigation.
+        window.addEventListener('beforeunload', (e) => {
+            if (dirty && !allowLeave) { e.preventDefault(); e.returnValue = ''; }
+        });
 
         loadSettings();
     </script>
