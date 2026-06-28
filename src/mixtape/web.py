@@ -786,7 +786,14 @@ def create_app(input_dir: Path | None = None) -> Flask:
             logging.getLogger(__name__).warning(
                 "Anthropic API error %s: %s", status, body
             )
-            return jsonify({"error": f"Anthropic API error ({status})"}), 502
+            if status in (401, 403):
+                msg = ("Anthropic API key is invalid or revoked. Update it in "
+                       "Settings, or fill the fields in manually.")
+            elif status == 429:
+                msg = "Anthropic rate limit / quota reached. Try again later, or fill the fields in manually."
+            else:
+                msg = f"Anthropic API error ({status})"
+            return jsonify({"error": msg}), 502
         except json.JSONDecodeError:
             return jsonify({"error": "AI returned invalid JSON"}), 502
         except Exception:
