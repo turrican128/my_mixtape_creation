@@ -118,7 +118,7 @@ def _merge_session(discovered: list[Track]) -> tuple[list[Track], list[str], dic
 
     Returns (ordered_included_tracks, removed_filenames, transitions).
     """
-    by_name = {t.path.name: t for t in discovered}
+    by_name = {t.rel: t for t in discovered}
 
     session = _load_session()
     order = [f for f in session["order"] if f in by_name]
@@ -217,7 +217,7 @@ def _timestamp(seconds: float) -> str:
 
 def _track_to_dict(tr: Track) -> dict[str, Any]:
     return {
-        "file": tr.path.name,
+        "file": tr.rel or tr.path.name,
         "artist": tr.artist,
         "title": tr.title,
         "display": tr.display,
@@ -330,7 +330,9 @@ def create_app(input_dir: Path | None = None) -> Flask:
             "transitions": transitions,
         })
         if probe_errors:
-            resp.headers["X-Warning"] = "; ".join(probe_errors[:3])
+            # Header values may not contain newlines (ffprobe stderr often does).
+            warning = "; ".join(probe_errors[:3])
+            resp.headers["X-Warning"] = " ".join(warning.split())
         return resp
 
     # ------------------------------------------------------------------
@@ -374,8 +376,8 @@ def create_app(input_dir: Path | None = None) -> Flask:
         except FileNotFoundError as exc:
             return jsonify({"error": str(exc)}), 404
 
-        # Build lookup by filename (case-insensitive)
-        by_name = {tr.path.name.lower(): tr for tr in tracks}
+        # Build lookup by relative path (case-insensitive)
+        by_name = {tr.rel.lower(): tr for tr in tracks}
 
         reordered: list[Track] = []
         for fname in ordered_files:
@@ -421,7 +423,7 @@ def create_app(input_dir: Path | None = None) -> Flask:
     # ------------------------------------------------------------------
 
     def _folder_names() -> set[str]:
-        """Filenames currently in the input folder (empty set if missing)."""
+        """Track identities (relative paths) in the input folder (empty if missing)."""
         try:
             discovered = discover_tracks(
                 input_dir=app.config["INPUT_DIR"],
@@ -430,7 +432,7 @@ def create_app(input_dir: Path | None = None) -> Flask:
             )
         except FileNotFoundError:
             return set()
-        return {t.path.name for t in discovered}
+        return {t.rel for t in discovered}
 
     @app.route("/api/session", methods=["PUT"])
     def api_session_put():
@@ -533,7 +535,7 @@ def create_app(input_dir: Path | None = None) -> Flask:
                     manifest_path=None,
                     parse_style=parse_style,
                 )
-                by_name = {tr.path.name.lower(): tr for tr in tracks}
+                by_name = {tr.rel.lower(): tr for tr in tracks}
                 ordered: list[Track] = []
                 for fname in order:
                     key = fname.lower()

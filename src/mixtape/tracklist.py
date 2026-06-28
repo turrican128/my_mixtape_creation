@@ -26,6 +26,10 @@ class Track:
     sample_rate_hz: int | None = None
     codec: str | None = None
     lossless: bool = False
+    # Stable identity used by the web UI/session: path relative to the
+    # input folder, posix-style (e.g. "Synthwave/song.mp3"). For top-level
+    # files this equals the bare filename, so older sessions stay valid.
+    rel: str = ""
 
     @property
     def display(self) -> str:
@@ -81,10 +85,11 @@ def discover_tracks(
         manifest = load_manifest(manifest_path)
 
     exts = {".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg"}
-    files = [p for p in input_dir.iterdir() if p.is_file() and p.suffix.lower() in exts]
+    # Recurse into subfolders so tracks organized into directories are found.
+    files = [p for p in input_dir.rglob("*") if p.is_file() and p.suffix.lower() in exts]
 
-    # Default stable ordering: filename
-    files.sort(key=lambda p: p.name.lower())
+    # Default stable ordering: relative path (groups files by subfolder).
+    files.sort(key=lambda p: p.relative_to(input_dir).as_posix().lower())
 
     if first_track:
         by_name_ci = {p.name.lower(): p for p in files}
@@ -125,7 +130,8 @@ def discover_tracks(
             artist = str(ov.get("artist", artist) or "")
             title = str(ov.get("title", title) or "")
 
-        tracks.append(Track(path=p, artist=artist, title=title))
+        rel = p.relative_to(input_dir).as_posix()
+        tracks.append(Track(path=p, artist=artist, title=title, rel=rel))
 
     if not tracks:
         raise FileNotFoundError(f"No audio files found in {input_dir}")

@@ -305,7 +305,7 @@
         }
         // Different track — switch source and play from the start
         currentlyPlaying = file;
-        audioPlayer.src = `/api/audio/${encodeURIComponent(file)}`;
+        audioPlayer.src = `/api/audio/${audioPath(file)}`;
         // Reset and show the seek bar under this track immediately; it fills
         // in its duration once "loadedmetadata" fires.
         mountSeekBar(file);
@@ -316,6 +316,14 @@
             unmountSeekBar();
             updatePlayButtons();
         });
+    }
+
+    // Encode a track identity for the /api/audio/<path:...> URL: encode each
+    // path segment but keep the "/" separators literal so Flask's path
+    // converter matches subfolders (encodeURIComponent would turn "/" into
+    // %2F, which Werkzeug rejects).
+    function audioPath(file) {
+        return String(file).split("/").map(encodeURIComponent).join("/");
     }
 
     function updatePlayButtons() {
