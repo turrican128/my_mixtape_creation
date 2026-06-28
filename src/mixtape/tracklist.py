@@ -92,11 +92,14 @@ def discover_tracks(
     files.sort(key=lambda p: p.relative_to(input_dir).as_posix().lower())
 
     if first_track:
+        # Accept either a folder-relative path ("CD1/song.flac", from the web
+        # UI) or a bare filename ("song.flac", from the CLI).
+        by_rel_ci = {p.relative_to(input_dir).as_posix().lower(): p for p in files}
         by_name_ci = {p.name.lower(): p for p in files}
         key = first_track.lower()
-        if key not in by_name_ci:
+        first_p = by_rel_ci.get(key) or by_name_ci.get(key)
+        if first_p is None:
             raise FileNotFoundError(f"--first-track not found in input folder: {first_track}")
-        first_p = by_name_ci[key]
         files = [first_p] + [p for p in files if p != first_p]
 
     if "order" in manifest:

@@ -197,11 +197,20 @@ def build_mix(
         first_track=first_track,
     )
 
-    # Optional filter: restrict to the given filenames (case-insensitive)
-    # and order them according to include_files.
+    # Optional filter: restrict to the given track ids (case-insensitive) and
+    # order them according to include_files. Ids are folder-relative paths
+    # (e.g. "CD1/song.flac"); we also accept bare filenames for backward
+    # compatibility (CLI / top-level tracks).
     if include_files is not None:
-        by_name = {tr.path.name.lower(): tr for tr in tracks}
-        tracks = [by_name[f.lower()] for f in include_files if f.lower() in by_name]
+        by_rel = {tr.rel.lower(): tr for tr in tracks}
+        by_base = {tr.path.name.lower(): tr for tr in tracks}
+        selected: list[Track] = []
+        for f in include_files:
+            key = f.lower()
+            tr = by_rel.get(key) or by_base.get(key)
+            if tr is not None:
+                selected.append(tr)
+        tracks = selected
 
     # Probe durations
     probed: list[Track] = []
