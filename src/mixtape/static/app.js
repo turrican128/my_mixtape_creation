@@ -855,13 +855,15 @@
         let cls;
         if (t.lossless || kbps >= 320) cls = "track-quality--high";
         else if (kbps >= 192) cls = "track-quality--mid";
-        else cls = "track-quality--low";
+        else if (kbps > 128) cls = "track-quality--low";
+        else cls = "track-quality--poor";
 
         const parts = [];
         if (codec) parts.push(codec);
         parts.push(`${kbps} kbps`);
         if (t.sample_rate_hz) parts.push(`${(t.sample_rate_hz / 1000).toFixed(1)} kHz`);
         if (t.lossless) parts.push("lossless");
+        else if (kbps <= 128) parts.push("poor quality");
         else if (kbps < 192) parts.push("lower quality");
         return { label, cls, title: parts.join(" · ") };
     }
