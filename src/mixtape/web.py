@@ -247,6 +247,125 @@ def _compute_total_duration(tracks: list[Track], crossfade_s: float) -> float:
     return total
 
 
+def _enrich_missing_artists(tracklist_json: Path, tracklist_txt: Path) -> int:
+    """Use Claude to fill in the original artist for tracks whose filename
+    had no parseable artist (so Mixcloud won't show "Unknown").
+
+    Best-effort: needs an Anthropic key and only runs when there are gaps.
+    Returns the number of artists filled. Never raises for API/parse issues.
+    """
+    api_key = (_settings.get("anthropic_api_key") or "").strip()
+    if not api_key:
+        return 0
+    try:
+        data = json.loads(tracklist_json.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return 0
+    if not isinstance(data, list):
+        return 0
+
+    missing = [
+        (i, t) for i, t in enumerate(data)
+        if isinstance(t, dict) and not str(t.get("artist") or "").strip()
+    ]
+    if not missing:
+        return 0
+
+    items = [
+        {"index": i, "title": str(t.get("title") or ""), "file": str(t.get("file") or "")}
+        for i, t in missing
+    ]
+    prompt = (
+        "You are a music metadata expert. Each item below is a track taken "
+        "from DJ-mix / bootleg filenames, so the text may be messy, use "
+        "underscores, omit the artist, or include remix/mix descriptors.\n\n"
+        "For each item, identify the ORIGINAL recording artist of the song. "
+        "Return a JSON array where each element has:\n"
+        '- "index": the same index value\n'
+        '- "artist": the original performing artist. If you are NOT reasonably '
+        'confident, use an empty string "".\n'
+        '- "title": a cleaned song title (proper capitalization, underscores '
+        "removed, remix/mix info kept if present).\n\n"
+        "Respond with ONLY the JSON array, no markdown fences, no commentary.\n\n"
+        f"Items:\n{json.dumps(items, ensure_ascii=False)}\n"
+    )
+
+    try:
+        r = http_requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": "claude-haiku-4-5",
+                "max_tokens": 1024,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+            timeout=30,
+        )
+        r.raise_for_status()
+        body = r.json()
+        text = ""
+        for block in body.get("content", []):
+            if block.get("type") == "text":
+                text += block.get("text", "")
+        text = text.strip()
+        text = re.sub(r"^```[a-zA-Z]*\n?", "", text)
+        text = re.sub(r"\n?```$", "", text).strip()
+        result = json.loads(text)
+    except Exception:
+        logging.getLogger(__name__).exception("Artist enrichment API call failed")
+        return 0
+
+    if not isinstance(result, list):
+        return 0
+
+    filled = 0
+    for entry in result:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            idx = int(entry.get("index"))
+        except (TypeError, ValueError):
+            continue
+        if not (0 <= idx < len(data)) or not isinstance(data[idx], dict):
+            continue
+        # Only touch tracks that were actually missing an artist.
+        if str(data[idx].get("artist") or "").strip():
+            continue
+        artist = str(entry.get("artist") or "").strip()
+        title = str(entry.get("title") or "").strip()
+        if artist:
+            data[idx]["artist"] = artist
+            if title:
+                data[idx]["title"] = title
+            filled += 1
+
+    if not filled:
+        return 0
+
+    # Persist enriched JSON and regenerate the human-readable tracklist.
+    try:
+        tracklist_json.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+        lines = []
+        for t in data:
+            st = t.get("start_time_s")
+            ts = _timestamp(st) if isinstance(st, (int, float)) else ""
+            artist = str(t.get("artist") or "").strip()
+            title = str(t.get("title") or "").strip()
+            disp = f"{artist} – {title}" if artist and title else (title or artist)
+            lines.append((ts + " " + disp).strip())
+        tracklist_txt.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except OSError:
+        logging.getLogger(__name__).exception("Failed writing enriched tracklist")
+
+    return filled
+
+
 # ---------------------------------------------------------------------------
 # App factory
 # ---------------------------------------------------------------------------
@@ -568,6 +687,15 @@ def create_app(input_dir: Path | None = None) -> Flask:
                 )
 
                 if rc == 0:
+                    # Best-effort: fill any missing artists via AI so the
+                    # Mixcloud tracklist won't show "Unknown". Never fatal.
+                    try:
+                        _build_jobs[job_id]["progress"] = "Identifying original artists…"
+                        n = _enrich_missing_artists(tracklist_json, tracklist_txt)
+                        if n:
+                            logging.getLogger(__name__).info("Filled %d missing artist(s) via AI", n)
+                    except Exception:
+                        logging.getLogger(__name__).exception("Artist enrichment failed")
                     _build_jobs[job_id]["status"] = "done"
                     _build_jobs[job_id]["output_path"] = str(out_mp3)
                     _build_jobs[job_id]["progress"] = "Done!"
