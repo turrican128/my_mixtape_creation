@@ -600,23 +600,33 @@ def create_app(input_dir: Path | None = None) -> Flask:
         output_cleared = 0
         errors: list[str] = []
 
-        # 1) Source audio files -> Recycle Bin (recursive).
+        # 1) Source tracks -> Recycle Bin. Top-level audio files go
+        #    individually; any immediate subfolder that holds audio (e.g. a CD
+        #    rip with cover art / .cue / .log sitting alongside the tracks) is
+        #    trashed *whole* so the music folder is genuinely empty for the
+        #    next mix. Everything stays recoverable from the Recycle Bin.
         if input_dir.exists():
-            for p in [q for q in input_dir.rglob("*")
-                      if q.is_file() and q.suffix.lower() in audio_exts]:
+            audio_files = [q for q in input_dir.rglob("*")
+                           if q.is_file() and q.suffix.lower() in audio_exts]
+            top_level = [f for f in audio_files
+                         if len(f.relative_to(input_dir).parts) == 1]
+            sub_roots = sorted({input_dir / f.relative_to(input_dir).parts[0]
+                                for f in audio_files
+                                if len(f.relative_to(input_dir).parts) > 1})
+            for f in top_level:
                 try:
-                    send2trash(str(p))
+                    send2trash(str(f))
                     trashed_tracks += 1
                 except Exception as exc:  # noqa: BLE001 - report, keep going
-                    errors.append(f"{p.name}: {exc}")
-            # Remove subfolders left empty (deepest first); keep input_dir itself.
-            for d in sorted([q for q in input_dir.rglob("*") if q.is_dir()],
-                            key=lambda q: len(q.parts), reverse=True):
+                    errors.append(f"{f.name}: {exc}")
+            for d in sub_roots:
+                n = sum(1 for q in d.rglob("*")
+                        if q.is_file() and q.suffix.lower() in audio_exts)
                 try:
-                    if not any(d.iterdir()):
-                        d.rmdir()
-                except OSError:
-                    pass
+                    send2trash(str(d))
+                    trashed_tracks += n
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(f"{d.name}/: {exc}")
 
         # 2) Built artifacts in output/ -> Recycle Bin (regenerable, but
         #    recoverable anyway). Keep .gitkeep so the folder structure stays.
