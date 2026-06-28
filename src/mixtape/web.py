@@ -702,6 +702,9 @@ def create_app(input_dir: Path | None = None) -> Flask:
             "connected": bool(_settings.get("mixcloud_access_token")),
             "has_credentials": bool(_settings.get("mixcloud_client_id") and _settings.get("mixcloud_client_secret")),
             "ai_enabled": bool(_settings.get("anthropic_api_key")),
+            # Whether a built mixtape is already on disk and ready to upload.
+            # Lets the UI restore the Upload button after a page reload.
+            "has_build": (Path("output") / "mixtape.mp3").exists(),
         })
 
     # ------------------------------------------------------------------

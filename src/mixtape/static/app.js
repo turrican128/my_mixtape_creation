@@ -545,6 +545,7 @@
                     if ($uploadName) $uploadName.value = "";
                     if ($uploadDescription) $uploadDescription.value = "";
                     if ($uploadTags) $uploadTags.value = "";
+                    buildAvailable = true;
                     showUploadSection();
                 } else if (data.status === "error") {
                     clearInterval(pollTimer);
@@ -582,6 +583,7 @@
     const $coverBaseNote = document.getElementById("cover-base-note");
 
     let aiEnabled = false;
+    let buildAvailable = false; // a built mixtape exists on disk (output/mixtape.mp3)
     let coverBaseAvailable = false;
     let coverPreviewTimer = null;
 
@@ -590,14 +592,20 @@
             const data = await api("/api/mixcloud/status");
             mixcloudConnected = data.connected;
             aiEnabled = !!data.ai_enabled;
+            buildAvailable = !!data.has_build;
         } catch {
             mixcloudConnected = false;
             aiEnabled = false;
+            buildAvailable = false;
         }
     }
 
     function showUploadSection() {
-        if (!mixcloudConnected || !$btnShowUpload) return;
+        // Show the Upload button only when Mixcloud is connected AND a built
+        // mixtape exists on disk. buildAvailable persists across page reloads
+        // via /api/mixcloud/status, so navigating to Settings and back no
+        // longer loses the button.
+        if (!mixcloudConnected || !buildAvailable || !$btnShowUpload) return;
         $btnShowUpload.classList.remove("hidden");
     }
 
@@ -912,6 +920,11 @@
     // ----------------------------------------------------------------
     // Initialize
     // ----------------------------------------------------------------
-    checkMixcloudConnection();
-    loadTracks();
+    (async () => {
+        // Wait for both: loadTracks() hides the upload button, and the status
+        // check tells us whether a build already exists. Then restore the
+        // button if appropriate (survives a page reload from Settings).
+        await Promise.all([checkMixcloudConnection(), loadTracks()]);
+        showUploadSection();
+    })();
 })();
