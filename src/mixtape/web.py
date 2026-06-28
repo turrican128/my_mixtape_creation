@@ -21,7 +21,7 @@ from .tracklist import (
     compute_start_times,
     discover_tracks,
 )
-from .audio import build_mix, probe_duration_seconds
+from .audio import build_mix, probe_media_info
 from . import cover as cover_mod
 
 # ---------------------------------------------------------------------------
@@ -225,6 +225,11 @@ def _track_to_dict(tr: Track) -> dict[str, Any]:
         "duration_display": _timestamp(tr.duration_s) if tr.duration_s else None,
         "start_time_s": tr.start_time_s,
         "start_time_display": _timestamp(tr.start_time_s) if tr.start_time_s is not None else None,
+        "bit_rate_bps": tr.bit_rate_bps,
+        "bit_rate_kbps": round(tr.bit_rate_bps / 1000) if tr.bit_rate_bps else None,
+        "sample_rate_hz": tr.sample_rate_hz,
+        "codec": tr.codec,
+        "lossless": tr.lossless,
     }
 
 
@@ -291,8 +296,15 @@ def create_app(input_dir: Path | None = None) -> Flask:
         probed: list[Track] = []
         for tr in tracks:
             try:
-                d = probe_duration_seconds(tr.path)
-                probed.append(Track(**{**tr.__dict__, "duration_s": d}))
+                info = probe_media_info(tr.path)
+                probed.append(Track(**{
+                    **tr.__dict__,
+                    "duration_s": info["duration_s"],
+                    "bit_rate_bps": info["bit_rate_bps"],
+                    "sample_rate_hz": info["sample_rate_hz"],
+                    "codec": info["codec"],
+                    "lossless": info["lossless"],
+                }))
             except FileNotFoundError:
                 probe_errors.append("ffprobe not found — install ffmpeg and ensure it is on PATH")
                 probed.append(tr)
@@ -378,8 +390,15 @@ def create_app(input_dir: Path | None = None) -> Flask:
         probed: list[Track] = []
         for tr in reordered:
             try:
-                d = probe_duration_seconds(tr.path)
-                probed.append(Track(**{**tr.__dict__, "duration_s": d}))
+                info = probe_media_info(tr.path)
+                probed.append(Track(**{
+                    **tr.__dict__,
+                    "duration_s": info["duration_s"],
+                    "bit_rate_bps": info["bit_rate_bps"],
+                    "sample_rate_hz": info["sample_rate_hz"],
+                    "codec": info["codec"],
+                    "lossless": info["lossless"],
+                }))
             except Exception:
                 probed.append(tr)
 

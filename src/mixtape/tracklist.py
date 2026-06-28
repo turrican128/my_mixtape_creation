@@ -22,6 +22,10 @@ class Track:
     title: str
     duration_s: float | None = None
     start_time_s: float | None = None
+    bit_rate_bps: int | None = None
+    sample_rate_hz: int | None = None
+    codec: str | None = None
+    lossless: bool = False
 
     @property
     def display(self) -> str:

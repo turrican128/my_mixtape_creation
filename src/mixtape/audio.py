@@ -61,6 +61,63 @@ def probe_duration_seconds(path: Path) -> float:
     return dur
 
 
+# Codecs that are mathematically lossless — their bitrate reflects the source
+# fidelity, not a quality ceiling.
+_LOSSLESS_CODECS = frozenset(
+    {"flac", "alac", "wavpack", "tta", "ape", "pcm_s16le", "pcm_s24le", "pcm_s32le"}
+)
+
+
+def probe_media_info(path: Path) -> dict[str, object]:
+    """Return duration plus quality metadata in a single ffprobe call.
+
+    Keys: duration_s (float|None), bit_rate_bps (int|None),
+    sample_rate_hz (int|None), codec (str|None), lossless (bool).
+    Falls back gracefully when individual fields are missing.
+    """
+    out = _run_capture(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "format=duration,bit_rate:stream=codec_name,sample_rate,bit_rate",
+            "-of",
+            "json",
+            str(path),
+        ]
+    )
+    data = json.loads(out)
+    fmt = data.get("format", {}) or {}
+    streams = data.get("streams", []) or []
+    stream = streams[0] if streams else {}
+
+    def _to_int(v: object) -> int | None:
+        try:
+            return int(v)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None
+
+    def _to_float(v: object) -> float | None:
+        try:
+            return float(v)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None
+
+    # Prefer the container/format bitrate (overall), fall back to the stream's.
+    bit_rate = _to_int(fmt.get("bit_rate")) or _to_int(stream.get("bit_rate"))
+    codec = stream.get("codec_name") or None
+    return {
+        "duration_s": _to_float(fmt.get("duration")),
+        "bit_rate_bps": bit_rate,
+        "sample_rate_hz": _to_int(stream.get("sample_rate")),
+        "codec": codec,
+        "lossless": bool(codec and codec.lower() in _LOSSLESS_CODECS),
+    }
+
+
 _CURVES = [
     "tri",
     "qsin",

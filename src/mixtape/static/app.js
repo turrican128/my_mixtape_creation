@@ -17,14 +17,21 @@
     // Which track filename is loaded in the audio element (playing OR paused).
     // null = no track loaded.
     let currentlyPlaying = null;
+    let isScrubbing = false; // true while the user is dragging the seek bar
     const audioPlayer = new Audio();
     audioPlayer.preload = "none";
     audioPlayer.addEventListener("ended", () => {
         currentlyPlaying = null;
+        unmountSeekBar();
         updatePlayButtons();
     });
     audioPlayer.addEventListener("play", () => updatePlayButtons());
     audioPlayer.addEventListener("pause", () => updatePlayButtons());
+    // Keep the seek bar in sync with playback.
+    audioPlayer.addEventListener("loadedmetadata", () => syncSeekBar(true));
+    audioPlayer.addEventListener("timeupdate", () => {
+        if (!isScrubbing) syncSeekBar(false);
+    });
 
     // Monotonic counter so stale /api/tracks/reorder responses can't
     // clobber newer local mutations (e.g. rapid successive deletes).
@@ -36,6 +43,7 @@
         audioPlayer.removeAttribute("src");
         try { audioPlayer.load(); } catch (e) { /* ignore */ }
         currentlyPlaying = null;
+        unmountSeekBar();
     }
 
     // ----------------------------------------------------------------
@@ -146,6 +154,7 @@
                     </div>`;
 
                 const isPlaying = currentlyPlaying === t.file && !audioPlayer.paused;
+                const q = qualityBadge(t);
                 return `
             <div class="track-card" data-file="${escapeAttr(t.file)}">
                 <button class="track-play-btn${isPlaying ? " playing" : ""}" data-file="${escapeAttr(t.file)}" title="${isPlaying ? "Pause" : "Play"}">
@@ -156,6 +165,7 @@
                     <div class="track-display">${escapeHtml(t.display)}</div>
                     <div class="track-filename">${escapeHtml(t.file)}</div>
                 </div>
+                ${q ? `<span class="track-quality ${q.cls}" title="${escapeAttr(q.title)}">${escapeHtml(q.label)}</span>` : `<span class="track-quality track-quality--none">—</span>`}
                 <div class="track-duration">${t.duration_display || "??"}</div>
                 <button class="track-delete-btn" data-file="${escapeAttr(t.file)}" title="Remove from playlist">
                     ✕
@@ -194,6 +204,88 @@
         });
 
         initSortable();
+
+        // Re-attach the seek bar under the active track (renderTracks rebuilds
+        // the whole list, so the previously-mounted bar was discarded).
+        if (currentlyPlaying && tracks.some((t) => t.file === currentlyPlaying)) {
+            mountSeekBar(currentlyPlaying);
+            syncSeekBar(true);
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // Seek bar (scrub playback position of the active track)
+    // ----------------------------------------------------------------
+    let seekBarEl = null;
+
+    function formatTime(secs) {
+        if (!isFinite(secs) || secs < 0) secs = 0;
+        const m = Math.floor(secs / 60);
+        const s = Math.floor(secs % 60);
+        return `${m}:${s < 10 ? "0" : ""}${s}`;
+    }
+
+    function ensureSeekBar() {
+        if (seekBarEl) return seekBarEl;
+        const el = document.createElement("div");
+        el.className = "track-seek";
+        el.innerHTML = `
+            <span class="seek-time seek-cur">0:00</span>
+            <input type="range" class="seek-range" min="0" max="0" value="0" step="0.1" aria-label="Seek position">
+            <span class="seek-time seek-dur">0:00</span>`;
+        const range = el.querySelector(".seek-range");
+        // Don't let dragging the slider start a SortableJS drag.
+        ["pointerdown", "mousedown"].forEach((evt) =>
+            range.addEventListener(evt, (e) => e.stopPropagation())
+        );
+        range.addEventListener("input", () => {
+            isScrubbing = true;
+            el.querySelector(".seek-cur").textContent = formatTime(Number(range.value));
+        });
+        const commit = () => {
+            if (isFinite(audioPlayer.duration)) {
+                audioPlayer.currentTime = Number(range.value);
+            }
+            isScrubbing = false;
+        };
+        range.addEventListener("change", commit);
+        seekBarEl = el;
+        return el;
+    }
+
+    function mountSeekBar(file) {
+        const el = ensureSeekBar();
+        const card = $trackList.querySelector(`.track-card[data-file="${cssEscape(file)}"]`);
+        if (!card) return;
+        // Insert directly beneath the active track card.
+        if (el.previousElementSibling !== card) {
+            card.insertAdjacentElement("afterend", el);
+        }
+    }
+
+    function unmountSeekBar() {
+        if (seekBarEl && seekBarEl.parentNode) {
+            seekBarEl.parentNode.removeChild(seekBarEl);
+        }
+        isScrubbing = false;
+    }
+
+    function syncSeekBar(updateMax) {
+        if (!seekBarEl) return;
+        const range = seekBarEl.querySelector(".seek-range");
+        const dur = audioPlayer.duration;
+        if (updateMax && isFinite(dur) && dur > 0) {
+            range.max = dur;
+            seekBarEl.querySelector(".seek-dur").textContent = formatTime(dur);
+        }
+        if (!isScrubbing) range.value = audioPlayer.currentTime || 0;
+        seekBarEl.querySelector(".seek-cur").textContent = formatTime(audioPlayer.currentTime || 0);
+    }
+
+    // CSS.escape fallback for older engines (used in attribute selectors).
+    function cssEscape(str) {
+        if (window.CSS && CSS.escape) return CSS.escape(str);
+        return (str || "").replace(/["\\\]]/g, "\\$&");
     }
 
     // ----------------------------------------------------------------
@@ -214,9 +306,14 @@
         // Different track — switch source and play from the start
         currentlyPlaying = file;
         audioPlayer.src = `/api/audio/${encodeURIComponent(file)}`;
+        // Reset and show the seek bar under this track immediately; it fills
+        // in its duration once "loadedmetadata" fires.
+        mountSeekBar(file);
+        syncSeekBar(true);
         audioPlayer.play().catch((err) => {
             console.error("Playback failed:", err);
             currentlyPlaying = null;
+            unmountSeekBar();
             updatePlayButtons();
         });
     }
@@ -354,7 +451,13 @@
     // Reset playlist — restore all songs (clear removed tracks)
     // ----------------------------------------------------------------
     async function resetSession() {
-        if (!confirm("Restore all songs and clear your removed tracks?")) return;
+        const ok = await confirmModal({
+            title: "Reset playlist",
+            message: "Restore all songs and clear your removed tracks? Your current order and removed list will be cleared.",
+            confirmText: "Restore all",
+            cancelText: "Cancel",
+        });
+        if (!ok) return;
         try {
             await api("/api/session/reset", { method: "POST" });
             removedFiles = new Set();
@@ -682,6 +785,87 @@
     // ----------------------------------------------------------------
     // Utility
     // ----------------------------------------------------------------
+    // ----------------------------------------------------------------
+    // Styled confirm modal (replaces native window.confirm)
+    // ----------------------------------------------------------------
+    const $confirmModal = document.getElementById("confirm-modal");
+    const $confirmTitle = document.getElementById("confirm-title");
+    const $confirmMessage = document.getElementById("confirm-message");
+    const $confirmOk = document.getElementById("confirm-ok");
+    const $confirmCancel = document.getElementById("confirm-cancel");
+    const $confirmClose = document.getElementById("confirm-close");
+
+    function confirmModal(opts = {}) {
+        const {
+            title = "Confirm",
+            message = "Are you sure?",
+            confirmText = "Confirm",
+            cancelText = "Cancel",
+            danger = false,
+        } = opts;
+
+        return new Promise((resolve) => {
+            if (!$confirmModal) {
+                // Fallback if the modal markup is missing.
+                resolve(window.confirm(message));
+                return;
+            }
+            $confirmTitle.textContent = title;
+            $confirmMessage.textContent = message;
+            $confirmOk.textContent = confirmText;
+            $confirmCancel.textContent = cancelText;
+            $confirmOk.classList.toggle("btn-danger", !!danger);
+            $confirmOk.classList.toggle("btn-primary", !danger);
+            $confirmModal.classList.remove("hidden");
+            $confirmOk.focus();
+
+            function cleanup(result) {
+                $confirmModal.classList.add("hidden");
+                $confirmOk.removeEventListener("click", onOk);
+                $confirmCancel.removeEventListener("click", onCancel);
+                $confirmClose.removeEventListener("click", onCancel);
+                $confirmModal.removeEventListener("click", onOverlay);
+                document.removeEventListener("keydown", onKey);
+                resolve(result);
+            }
+            function onOk() { cleanup(true); }
+            function onCancel() { cleanup(false); }
+            function onOverlay(e) { if (e.target === $confirmModal) cleanup(false); }
+            function onKey(e) {
+                if (e.key === "Escape") cleanup(false);
+                else if (e.key === "Enter") cleanup(true);
+            }
+
+            $confirmOk.addEventListener("click", onOk);
+            $confirmCancel.addEventListener("click", onCancel);
+            $confirmClose.addEventListener("click", onCancel);
+            $confirmModal.addEventListener("click", onOverlay);
+            document.addEventListener("keydown", onKey);
+        });
+    }
+
+    // Build a quality badge (codec + bitrate) with a coarse quality tier.
+    // Returns null when no bitrate info is available.
+    function qualityBadge(t) {
+        const kbps = t.bit_rate_kbps;
+        if (!kbps) return null;
+        const codec = (t.codec || "").toUpperCase();
+        const label = codec ? `${codec} · ${kbps}k` : `${kbps} kbps`;
+
+        let cls;
+        if (t.lossless || kbps >= 320) cls = "track-quality--high";
+        else if (kbps >= 192) cls = "track-quality--mid";
+        else cls = "track-quality--low";
+
+        const parts = [];
+        if (codec) parts.push(codec);
+        parts.push(`${kbps} kbps`);
+        if (t.sample_rate_hz) parts.push(`${(t.sample_rate_hz / 1000).toFixed(1)} kHz`);
+        if (t.lossless) parts.push("lossless");
+        else if (kbps < 192) parts.push("lower quality");
+        return { label, cls, title: parts.join(" · ") };
+    }
+
     function escapeHtml(str) {
         const div = document.createElement("div");
         div.textContent = str || "";
