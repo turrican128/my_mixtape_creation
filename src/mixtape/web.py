@@ -341,15 +341,15 @@ def create_app(input_dir: Path | None = None) -> Flask:
 
     @app.route("/api/audio/<path:filename>", methods=["GET"])
     def api_audio(filename: str):
-        # Only serve files with recognized audio extensions.
-        # send_from_directory handles traversal protection above the base.
+        # Only serve files with recognized audio extensions. The file type
+        # is gated by the suffix; path traversal is handled by
+        # send_from_directory (it confines access to the base directory).
+        # Note: we deliberately do NOT reject dots inside the stem —
+        # legitimate names carry them (e.g. "19. Artist - Title.flac",
+        # "Mr. Roboto").
         p = Path(filename)
         if p.suffix.lower() not in _AUDIO_EXTS:
             return jsonify({"error": "Not an audio file"}), 400
-        # Reject double extensions like "secret.py.mp3" — the stem must
-        # not itself contain a dot.
-        if "." in p.stem:
-            return jsonify({"error": "Invalid filename"}), 400
         input_dir: Path = app.config["INPUT_DIR"]
         return send_from_directory(input_dir.resolve(), filename, conditional=True)
 
