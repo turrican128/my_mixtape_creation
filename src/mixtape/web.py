@@ -580,6 +580,70 @@ def create_app(input_dir: Path | None = None) -> Flask:
         _save_session(session["order"], [], session["transitions"])
         return jsonify({"ok": True})
 
+    @app.route("/api/cleanup", methods=["POST"])
+    def api_cleanup():
+        """Start fresh for the next mix: send all source tracks to the OS
+        Recycle Bin, clear the output folder, and reset the working
+        playlist. Destructive but recoverable (Recycle Bin). The UI only
+        offers this after a successful upload and behind a confirm dialog."""
+        try:
+            from send2trash import send2trash
+        except ImportError:
+            return jsonify({
+                "ok": False,
+                "errors": ["Send2Trash is not installed. Run: pip install Send2Trash"],
+            }), 500
+
+        input_dir: Path = app.config["INPUT_DIR"]
+        audio_exts = {".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg"}
+        trashed_tracks = 0
+        output_cleared = 0
+        errors: list[str] = []
+
+        # 1) Source audio files -> Recycle Bin (recursive).
+        if input_dir.exists():
+            for p in [q for q in input_dir.rglob("*")
+                      if q.is_file() and q.suffix.lower() in audio_exts]:
+                try:
+                    send2trash(str(p))
+                    trashed_tracks += 1
+                except Exception as exc:  # noqa: BLE001 - report, keep going
+                    errors.append(f"{p.name}: {exc}")
+            # Remove subfolders left empty (deepest first); keep input_dir itself.
+            for d in sorted([q for q in input_dir.rglob("*") if q.is_dir()],
+                            key=lambda q: len(q.parts), reverse=True):
+                try:
+                    if not any(d.iterdir()):
+                        d.rmdir()
+                except OSError:
+                    pass
+
+        # 2) Built artifacts in output/ -> Recycle Bin (regenerable, but
+        #    recoverable anyway). Keep .gitkeep so the folder structure stays.
+        output_dir = Path("output")
+        if output_dir.exists():
+            for p in list(output_dir.iterdir()):
+                if p.name == ".gitkeep":
+                    continue
+                try:
+                    send2trash(str(p))
+                    output_cleared += 1
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(f"output/{p.name}: {exc}")
+
+        # 3) Reset the working playlist.
+        try:
+            _save_session([], [], {})
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"session reset: {exc}")
+
+        return jsonify({
+            "ok": not errors,
+            "trashed_tracks": trashed_tracks,
+            "output_cleared": output_cleared,
+            "errors": errors[:5],
+        })
+
     # ------------------------------------------------------------------
     # API: Transitions
     # ------------------------------------------------------------------

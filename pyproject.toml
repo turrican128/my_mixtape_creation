@@ -8,6 +8,7 @@ dependencies = [
   "PyYAML",
   "flask",
   "Pillow",
+  "Send2Trash",
 ]
 
 [project.scripts]

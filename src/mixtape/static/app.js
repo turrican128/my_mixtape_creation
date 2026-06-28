@@ -573,6 +573,7 @@
     const $uploadDescription = document.getElementById("upload-description");
     const $uploadTags = document.getElementById("upload-tags");
     const $btnUpload = document.getElementById("btn-upload");
+    const $btnCleanup = document.getElementById("btn-cleanup");
     const $btnModalClose = document.getElementById("btn-modal-close");
     const $btnModalCancel = document.getElementById("btn-modal-cancel");
     const $uploadStatus = document.getElementById("upload-status");
@@ -781,6 +782,8 @@
                         $btnShowUpload.disabled = true;
                         $btnShowUpload.title = "Already uploaded this session";
                     }
+                    // Now that the upload succeeded, offer the cleanup action.
+                    if ($btnCleanup) $btnCleanup.classList.remove("hidden");
                 } else if (data.status === "error") {
                     clearInterval(timer);
                     $uploadStatus.textContent = `Error: ${data.error}`;
@@ -796,6 +799,44 @@
                 $btnUpload.textContent = "☁ Upload to Mixcloud";
             }
         }, 2000);
+    }
+
+    // ----------------------------------------------------------------
+    // Clean up for next mix (after a successful upload)
+    // ----------------------------------------------------------------
+    async function cleanupForNextMix() {
+        const n = tracks.length;
+        const ok = await confirmModal({
+            title: "Clean up for next mix",
+            message: `Move ${n} source track${n === 1 ? "" : "s"} to the Recycle Bin, clear the built mixtape, and reset the playlist? You can restore the tracks from the Recycle Bin if needed.`,
+            confirmText: "Move to Recycle Bin",
+            cancelText: "Cancel",
+            danger: true,
+        });
+        if (!ok) return;
+
+        $btnCleanup.disabled = true;
+        $btnCleanup.textContent = "Cleaning…";
+        try {
+            const data = await api("/api/cleanup", { method: "POST" });
+            // Reset client state and reflect the now-empty folder.
+            buildAvailable = false;
+            removedFiles = new Set();
+            clearAudioPlayer();
+            closeUploadModal();
+            hideUploadSection();
+            await loadTracks();
+            const msg = data.ok
+                ? `Moved ${data.trashed_tracks} track(s) to Recycle Bin. Ready for the next mix.`
+                : `Cleaned with some issues: ${(data.errors || []).join("; ")}`;
+            showSavedHint(msg);
+        } catch (err) {
+            showSavedHint("Cleanup failed: " + err.message);
+        } finally {
+            $btnCleanup.disabled = false;
+            $btnCleanup.textContent = "🧹 Clean up for next mix";
+            $btnCleanup.classList.add("hidden");
+        }
     }
 
     // ----------------------------------------------------------------
@@ -907,6 +948,7 @@
     $btnBuild.addEventListener("click", buildMixtape);
     if ($btnShowUpload) $btnShowUpload.addEventListener("click", openUploadModal);
     if ($btnUpload) $btnUpload.addEventListener("click", uploadToMixcloud);
+    if ($btnCleanup) $btnCleanup.addEventListener("click", cleanupForNextMix);
     if ($btnModalClose) $btnModalClose.addEventListener("click", closeUploadModal);
     if ($btnModalCancel) $btnModalCancel.addEventListener("click", closeUploadModal);
     if ($uploadModal) $uploadModal.addEventListener("click", (e) => {
