@@ -10,6 +10,7 @@
     // ----------------------------------------------------------------
     let tracks = [];
     let transitionModes = {}; // keyed by track filename -> mode for transition after that track
+    let removedFiles = new Set(); // filenames the user removed (kept out of the playlist)
     let currentJobId = null;
     let pollTimer = null;
     let mixcloudConnected = false;
@@ -49,6 +50,8 @@
     const $buildStatus = document.getElementById("build-status");
     const $warningBanner = document.getElementById("warning-banner");
     const $warningText = document.getElementById("warning-text");
+    const $btnReset = document.getElementById("btn-reset");
+    const $savedHint = document.getElementById("saved-hint");
 
     // ----------------------------------------------------------------
     // API helpers
@@ -88,7 +91,11 @@
             }
             const data = await resp.json();
             tracks = data.tracks;
-            // Initialize default transition modes for new tracks
+            // Restore the saved session: transitions (the server has already
+            // randomized any first-seen track) and the removed-files set.
+            transitionModes = data.transitions || {};
+            removedFiles = new Set(data.removed || []);
+            // Guard against any gaps (shouldn't happen — server fills these).
             tracks.forEach((t) => {
                 if (!(t.file in transitionModes)) {
                     transitionModes[t.file] = "default";
@@ -161,6 +168,7 @@
         $trackList.querySelectorAll(".transition-select").forEach((sel) => {
             sel.addEventListener("change", (e) => {
                 transitionModes[e.target.dataset.file] = e.target.value;
+                saveSession();
             });
         });
 
@@ -233,6 +241,8 @@
         }
         tracks = tracks.filter((t) => t.file !== file);
         delete transitionModes[file];
+        removedFiles.add(file);
+        saveSession();
 
         if (tracks.length === 0) {
             renderTracks();
@@ -278,6 +288,7 @@
                 renderTracks();
                 // Send new order to backend
                 reorderTracks();
+                saveSession();
             },
         });
     }
@@ -303,6 +314,54 @@
             renderTracks();
         } catch (err) {
             console.error("Reorder failed:", err);
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // Persist the working playlist (debounced auto-save)
+    // ----------------------------------------------------------------
+    let saveTimer = null;
+
+    function saveSession() {
+        if (saveTimer) clearTimeout(saveTimer);
+        saveTimer = setTimeout(async () => {
+            try {
+                await api("/api/session", {
+                    method: "PUT",
+                    body: JSON.stringify({
+                        order: tracks.map((t) => t.file),
+                        removed: Array.from(removedFiles),
+                        transitions: transitionModes,
+                    }),
+                });
+                showSavedHint();
+            } catch (err) {
+                console.error("Session save failed:", err);
+            }
+        }, 400);
+    }
+
+    let savedHintTimer = null;
+    function showSavedHint(text = "Saved ✓") {
+        if (!$savedHint) return;
+        $savedHint.textContent = text;
+        $savedHint.classList.add("visible");
+        if (savedHintTimer) clearTimeout(savedHintTimer);
+        savedHintTimer = setTimeout(() => $savedHint.classList.remove("visible"), 1500);
+    }
+
+    // ----------------------------------------------------------------
+    // Reset playlist — restore all songs (clear removed tracks)
+    // ----------------------------------------------------------------
+    async function resetSession() {
+        if (!confirm("Restore all songs and clear your removed tracks?")) return;
+        try {
+            await api("/api/session/reset", { method: "POST" });
+            removedFiles = new Set();
+            await loadTracks();
+            showSavedHint("Playlist reset");
+        } catch (err) {
+            console.error("Reset failed:", err);
         }
     }
 
@@ -642,6 +701,7 @@
     // Event listeners
     // ----------------------------------------------------------------
     $btnRefresh.addEventListener("click", loadTracks);
+    if ($btnReset) $btnReset.addEventListener("click", resetSession);
     $btnBuild.addEventListener("click", buildMixtape);
     if ($btnShowUpload) $btnShowUpload.addEventListener("click", openUploadModal);
     if ($btnUpload) $btnUpload.addEventListener("click", uploadToMixcloud);

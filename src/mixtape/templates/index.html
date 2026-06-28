@@ -37,9 +37,15 @@
             <section class="track-panel">
                 <div class="panel-header">
                     <h2>Tracks</h2>
-                    <button class="btn btn-sm btn-secondary" id="btn-refresh" title="Rescan folder">
-                        ↻ Refresh
-                    </button>
+                    <div class="panel-actions">
+                        <span class="saved-hint" id="saved-hint"></span>
+                        <button class="btn btn-sm btn-secondary" id="btn-reset" title="Restore all songs and clear removed tracks">
+                            ⟲ Reset
+                        </button>
+                        <button class="btn btn-sm btn-secondary" id="btn-refresh" title="Rescan folder">
+                            ↻ Refresh
+                        </button>
+                    </div>
                 </div>
                 <div class="track-list" id="track-list">
                     <div class="loading" id="loading">Loading tracks…</div>

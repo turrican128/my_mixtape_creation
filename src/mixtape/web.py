@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import random
 import re
 import secrets
 import threading
@@ -63,6 +64,88 @@ def _load_config() -> dict[str, Any]:
 
 def _save_config(data: dict[str, Any]) -> None:
     _CONFIG_PATH.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+# ---------------------------------------------------------------------------
+# Playlist session persistence (which tracks, their order, their transitions)
+# ---------------------------------------------------------------------------
+#: Stores the user's working playlist so it survives a browser reload:
+#:   {"order": [filename, ...],        # included tracks, in order
+#:    "removed": [filename, ...],      # files kept out on purpose
+#:    "transitions": {filename: mode}} # per-track transition choice
+#: Gitignored like the other dot-files.
+_SESSION_PATH = Path(".mixtape_session.json")
+
+#: Modes the first-time randomizer picks from (DJ modes only — every
+#: fresh transition gets an effect).
+_DJ_TRANSITION_MODES = ("dj-smooth", "dj-random", "dj-dynamic")
+
+
+def _load_session() -> dict[str, Any]:
+    """Read the saved playlist session, tolerating a missing/corrupt file."""
+    empty = {"order": [], "removed": [], "transitions": {}}
+    if not _SESSION_PATH.exists():
+        return empty
+    try:
+        data = json.loads(_SESSION_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return empty
+    return {
+        "order": list(data.get("order", []) or []),
+        "removed": list(data.get("removed", []) or []),
+        "transitions": dict(data.get("transitions", {}) or {}),
+    }
+
+
+def _save_session(order: list[str], removed: list[str],
+                  transitions: dict[str, str]) -> None:
+    _SESSION_PATH.write_text(
+        json.dumps(
+            {"order": order, "removed": removed, "transitions": transitions},
+            indent=2,
+        ) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _merge_session(discovered: list[Track]) -> tuple[list[Track], list[str], dict[str, str]]:
+    """Merge the saved playlist session with what's currently in the folder.
+
+    - Restores the saved order; drops files no longer on disk.
+    - Keeps removed files out of the playlist.
+    - Appends brand-new files (never seen before) to the end.
+    - Assigns a random DJ transition to any track seen for the first time,
+      then persists it so reopening never re-randomizes.
+
+    Returns (ordered_included_tracks, removed_filenames, transitions).
+    """
+    by_name = {t.path.name: t for t in discovered}
+
+    session = _load_session()
+    order = [f for f in session["order"] if f in by_name]
+    removed = [f for f in session["removed"] if f in by_name]
+    known = set(order) | set(removed)
+    new = [f for f in by_name if f not in known]  # discover order (sorted)
+    order = order + new
+
+    transitions = {f: m for f, m in session["transitions"].items() if f in by_name}
+
+    # First-time randomization: any included track without a saved
+    # transition gets a random DJ mode (then frozen via the save below).
+    changed = (
+        order != session["order"]
+        or removed != session["removed"]
+        or len(transitions) != len(session["transitions"])
+    )
+    for f in order:
+        if f not in transitions:
+            transitions[f] = random.choice(_DJ_TRANSITION_MODES)
+            changed = True
+
+    if changed:
+        _save_session(order, removed, transitions)
+
+    ordered = [by_name[f] for f in order]
+    return ordered, removed, transitions
 
 # ---------------------------------------------------------------------------
 # Global settings (in-process; fine for single-user desktop tool)
@@ -191,13 +274,17 @@ def create_app(input_dir: Path | None = None) -> Flask:
         parse_style = TrackParseStyle(_settings["parse_style"])
 
         try:
-            tracks = discover_tracks(
+            discovered = discover_tracks(
                 input_dir=input_dir,
                 manifest_path=None,
                 parse_style=parse_style,
             )
         except FileNotFoundError as exc:
             return jsonify({"error": str(exc)}), 404
+
+        # Merge with the saved session: restore order/removed/transitions,
+        # append new files, and randomize first-seen transitions.
+        tracks, removed, transitions = _merge_session(discovered)
 
         # Probe durations
         probe_errors: list[str] = []
@@ -227,6 +314,8 @@ def create_app(input_dir: Path | None = None) -> Flask:
             "total_duration_s": total,
             "total_duration_display": _timestamp(total) if total > 0 else "--:--",
             "crossfade_s": crossfade_s,
+            "removed": removed,
+            "transitions": transitions,
         })
         if probe_errors:
             resp.headers["X-Warning"] = "; ".join(probe_errors[:3])
@@ -307,6 +396,49 @@ def create_app(input_dir: Path | None = None) -> Flask:
             "total_duration_s": total,
             "total_duration_display": _timestamp(total) if total > 0 else "--:--",
         })
+
+    # ------------------------------------------------------------------
+    # API: Playlist session (persist order / removed / transitions)
+    # ------------------------------------------------------------------
+
+    def _folder_names() -> set[str]:
+        """Filenames currently in the input folder (empty set if missing)."""
+        try:
+            discovered = discover_tracks(
+                input_dir=app.config["INPUT_DIR"],
+                manifest_path=None,
+                parse_style=TrackParseStyle(_settings["parse_style"]),
+            )
+        except FileNotFoundError:
+            return set()
+        return {t.path.name for t in discovered}
+
+    @app.route("/api/session", methods=["PUT"])
+    def api_session_put():
+        """Persist the working playlist. Called (debounced) by the UI after
+        every remove / reorder / transition change so it survives a reload.
+        Only filenames still present in the folder are stored."""
+        data = request.get_json(force=True)
+        folder = _folder_names()
+
+        order = [f for f in data.get("order", []) if f in folder]
+        order_set = set(order)
+        # A file can't be both in the playlist and removed — order wins.
+        removed = [f for f in data.get("removed", []) if f in folder and f not in order_set]
+        transitions_in = data.get("transitions", {}) or {}
+        transitions = {f: str(m) for f, m in transitions_in.items() if f in folder}
+
+        _save_session(order, removed, transitions)
+        return jsonify({"ok": True})
+
+    @app.route("/api/session/reset", methods=["POST"])
+    def api_session_reset():
+        """Restore all songs: clear removals so the next /api/tracks call
+        brings every folder file back. Restored tracks (which lost their
+        transition when removed) get a fresh random pick on reload."""
+        session = _load_session()
+        _save_session(session["order"], [], session["transitions"])
+        return jsonify({"ok": True})
 
     # ------------------------------------------------------------------
     # API: Transitions
