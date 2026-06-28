@@ -602,16 +602,23 @@
     }
 
     function showUploadSection() {
-        // Show the Upload button only when Mixcloud is connected AND a built
-        // mixtape exists on disk. buildAvailable persists across page reloads
-        // via /api/mixcloud/status, so navigating to Settings and back no
-        // longer loses the button.
-        if (!mixcloudConnected || !buildAvailable || !$btnShowUpload) return;
-        $btnShowUpload.classList.remove("hidden");
+        // Both buttons are driven by buildAvailable, which persists across
+        // page reloads via /api/mixcloud/status (has_build) — so the cleanup
+        // button survives a restart instead of only appearing right after an
+        // in-session upload.
+        if ($btnShowUpload) {
+            // Upload also needs a Mixcloud connection.
+            $btnShowUpload.classList.toggle("hidden", !(mixcloudConnected && buildAvailable));
+        }
+        if ($btnCleanup) {
+            // Cleanup just needs a built mixtape to exist (no Mixcloud needed).
+            $btnCleanup.classList.toggle("hidden", !buildAvailable);
+        }
     }
 
     function hideUploadSection() {
         if ($btnShowUpload) $btnShowUpload.classList.add("hidden");
+        if ($btnCleanup) $btnCleanup.classList.add("hidden");
     }
 
     async function openUploadModal() {
@@ -782,8 +789,8 @@
                         $btnShowUpload.disabled = true;
                         $btnShowUpload.title = "Already uploaded this session";
                     }
-                    // Now that the upload succeeded, offer the cleanup action.
-                    if ($btnCleanup) $btnCleanup.classList.remove("hidden");
+                    // The 🧹 Clean up button is already visible in the header
+                    // whenever a build exists; nothing extra needed here.
                 } else if (data.status === "error") {
                     clearInterval(timer);
                     $uploadStatus.textContent = `Error: ${data.error}`;
@@ -817,6 +824,7 @@
 
         $btnCleanup.disabled = true;
         $btnCleanup.textContent = "Cleaning…";
+        // (header button)
         try {
             const data = await api("/api/cleanup", { method: "POST" });
             // Reset client state and reflect the now-empty folder.
@@ -834,7 +842,7 @@
             showSavedHint("Cleanup failed: " + err.message);
         } finally {
             $btnCleanup.disabled = false;
-            $btnCleanup.textContent = "🧹 Clean up for next mix";
+            $btnCleanup.textContent = "🧹 Clean up";
             $btnCleanup.classList.add("hidden");
         }
     }
