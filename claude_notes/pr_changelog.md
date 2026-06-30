@@ -92,3 +92,10 @@
 - **New "✨ Regenerate" button** (modal footer, left side): re-runs the AI suggestion and **overwrites** the name/description/tags with a fresh take
 - `autofillFromAI(force)` gained a `force` flag — auto-fill-on-open still only fills blank fields (never clobbers typed text), while Regenerate replaces existing content; the button shows only when AI is enabled, disables itself while generating, and refreshes the cover preview afterward
 - Touched `app.js`, `style.css` (footer spacer), and `index.html` (button markup — needs a server restart to appear)
+
+### 0933c12 — Block double upload + notify on completion from the main page
+- **Date:** 2026-06-30
+- **Request 1 — prevent a second concurrent upload:** the modal Upload button already disabled itself during an upload, but the header "☁ Upload to Mixcloud" button stayed active, so closing and reopening the modal could start a second upload. Added an `uploadInProgress` guard that disables both; the header button shows "⏳ Uploading…" as a main-page progress signal, restored on error (retry) or locked to "✓ Uploaded" on success
+- **Request 2 — notify even when the modal is closed:** completion previously only updated the modal's status line (invisible once closed). Added a **toast notification** system (bottom-right, over the main page) — sticky green success toast with a "View on Mixcloud" link, red toast on error. The status poll already keeps running after the modal closes, so it now surfaces the result on the page
+- **Best-effort desktop notification:** requests `Notification` permission once when an upload starts; fires a system notification on completion/error if granted, so the user is pinged even after tabbing away. The in-page toast always fires regardless of permission/support
+- Touched `app.js` (state + `showToast`/`desktopNotify` helpers + wiring), `style.css` (toast styles), `index.html` (toast container — needs a server restart to appear)
