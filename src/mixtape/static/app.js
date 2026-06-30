@@ -455,6 +455,64 @@
         savedHintTimer = setTimeout(() => $savedHint.classList.remove("visible"), 1500);
     }
 
+    // Toast notifications — shown on the main page regardless of modal state.
+    const $toastContainer = document.getElementById("toast-container");
+    function showToast(message, opts = {}) {
+        if (!$toastContainer) return;
+        const { type = "info", url = null, linkText = "Open", duration = 9000 } = opts;
+        const toast = document.createElement("div");
+        toast.className = `toast toast--${type}`;
+
+        const msg = document.createElement("span");
+        msg.className = "toast-msg";
+        msg.textContent = message;
+        toast.appendChild(msg);
+
+        if (url) {
+            const a = document.createElement("a");
+            a.href = url;
+            a.target = "_blank";
+            a.rel = "noopener";
+            a.className = "toast-link";
+            a.textContent = linkText;
+            toast.appendChild(a);
+        }
+
+        const close = document.createElement("button");
+        close.className = "toast-close";
+        close.innerHTML = "&times;";
+        close.setAttribute("aria-label", "Dismiss");
+        let removeTimer = null;
+        const remove = () => {
+            if (removeTimer) clearTimeout(removeTimer);
+            toast.classList.remove("visible");
+            setTimeout(() => toast.remove(), 220);
+        };
+        close.addEventListener("click", remove);
+        toast.appendChild(close);
+
+        $toastContainer.appendChild(toast);
+        requestAnimationFrame(() => toast.classList.add("visible"));
+        if (duration > 0) removeTimer = setTimeout(remove, duration);
+        return toast;
+    }
+
+    // Best-effort desktop notification (only fires if the user granted it).
+    function requestNotifyPermission() {
+        try {
+            if (typeof Notification !== "undefined" && Notification.permission === "default") {
+                Notification.requestPermission().catch(() => {});
+            }
+        } catch { /* unsupported — toast still covers it */ }
+    }
+    function desktopNotify(title, body) {
+        try {
+            if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+                new Notification(title, { body });
+            }
+        } catch { /* ignore */ }
+    }
+
     // ----------------------------------------------------------------
     // Reset playlist — restore all songs (clear removed tracks)
     // ----------------------------------------------------------------
@@ -588,6 +646,7 @@
     let buildAvailable = false; // a built mixtape exists on disk (output/mixtape.mp3)
     let coverBaseAvailable = false;
     let coverPreviewTimer = null;
+    let uploadInProgress = false; // an upload job is running (block a second one)
 
     async function checkMixcloudConnection() {
         try {
@@ -753,11 +812,24 @@
             return;
         }
 
+        if (uploadInProgress) return; // guard: an upload is already running
+
         const tagsRaw = $uploadTags.value.trim();
         const tags = tagsRaw ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean) : [];
 
+        uploadInProgress = true;
         $btnUpload.disabled = true;
         $btnUpload.textContent = "⏳ Uploading…";
+        // Block starting a second upload from the header button too, and signal
+        // on the main page that an upload is running even with the modal closed.
+        if ($btnShowUpload) {
+            $btnShowUpload.disabled = true;
+            $btnShowUpload.textContent = "⏳ Uploading…";
+            $btnShowUpload.title = "Upload in progress…";
+        }
+        // Ask once for desktop-notification permission so we can ping the user
+        // if they tab away (best-effort; the in-page toast always fires anyway).
+        requestNotifyPermission();
         $uploadStatus.textContent = "Starting upload...";
         $uploadStatus.className = "upload-status building";
 
@@ -774,11 +846,24 @@
             });
             pollUploadStatus(data.job_id);
         } catch (err) {
+            uploadInProgress = false;
             $uploadStatus.textContent = `Error: ${err.message}`;
             $uploadStatus.className = "upload-status error";
             $btnUpload.disabled = false;
             $btnUpload.textContent = "☁ Upload to Mixcloud";
+            restoreHeaderUploadButton();
+            showToast(`Upload failed to start: ${err.message}`, { type: "error" });
         }
+    }
+
+    // Restore the header "Upload to Mixcloud" button to its idle state (used
+    // after an upload error so the user can retry; on success we instead lock
+    // it to "✓ Uploaded").
+    function restoreHeaderUploadButton() {
+        if (!$btnShowUpload) return;
+        $btnShowUpload.disabled = !(mixcloudConnected && buildAvailable);
+        $btnShowUpload.textContent = "☁ Upload to Mixcloud";
+        $btnShowUpload.title = "Upload the built mixtape to Mixcloud";
     }
 
     function pollUploadStatus(jobId) {
@@ -789,6 +874,7 @@
                     $uploadStatus.textContent = data.progress || "Uploading…";
                 } else if (data.status === "done") {
                     clearInterval(timer);
+                    uploadInProgress = false;
                     if (data.mixcloud_url) {
                         $uploadStatus.innerHTML = `Upload complete! <a href="${data.mixcloud_url}" target="_blank" class="upload-link">View on Mixcloud</a>`;
                     } else {
@@ -799,23 +885,39 @@
                     $btnUpload.textContent = "✓ Uploaded";
                     if ($btnShowUpload) {
                         $btnShowUpload.disabled = true;
+                        $btnShowUpload.textContent = "✓ Uploaded";
                         $btnShowUpload.title = "Already uploaded this session";
                     }
+                    // Notify on the main page too, in case the modal is closed.
+                    showToast("✅ Mixtape uploaded to Mixcloud!", {
+                        type: "success",
+                        url: data.mixcloud_url || null,
+                        linkText: "View on Mixcloud",
+                        duration: 0, // sticky until dismissed — it's the payoff moment
+                    });
+                    desktopNotify("Mixtape uploaded", "Your mix finished uploading to Mixcloud.");
                     // The 🧹 Clean up button is already visible in the header
                     // whenever a build exists; nothing extra needed here.
                 } else if (data.status === "error") {
                     clearInterval(timer);
+                    uploadInProgress = false;
                     $uploadStatus.textContent = `Error: ${data.error}`;
                     $uploadStatus.className = "upload-status error";
                     $btnUpload.disabled = false;
                     $btnUpload.textContent = "☁ Upload to Mixcloud";
+                    restoreHeaderUploadButton();
+                    showToast(`Upload failed: ${data.error}`, { type: "error" });
+                    desktopNotify("Upload failed", String(data.error || "Unknown error"));
                 }
             } catch (err) {
                 clearInterval(timer);
+                uploadInProgress = false;
                 $uploadStatus.textContent = `Polling error: ${err.message}`;
                 $uploadStatus.className = "upload-status error";
                 $btnUpload.disabled = false;
                 $btnUpload.textContent = "☁ Upload to Mixcloud";
+                restoreHeaderUploadButton();
+                showToast(`Lost track of the upload: ${err.message}`, { type: "error" });
             }
         }, 2000);
     }
