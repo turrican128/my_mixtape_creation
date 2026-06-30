@@ -76,3 +76,19 @@
   - Added a monotonic `reorderSeq` counter so stale `/api/tracks/reorder` responses can't clobber newer local deletes (fixes a race when clicking delete rapidly)
   - `deleteTrack` fully releases `audioPlayer.src` via `removeAttribute + load()`, dropping any in-flight fetch
   - `/api/audio` has an audio-extension whitelist and also rejects double-extension filenames (e.g. `secret.py.mp3`)
+
+## Session 2026-06-30 — cover polish + upload modal fixes
+
+### 004364e — Lower cover title: bottom-anchor text instead of centering mid-image
+- **Date:** 2026-06-30
+- **Problem:** all three cover presets (neon / chrome / outrun) vertically *centered* the title around 62–66% of the cover height, so it overlapped the artwork's focal point (e.g. the figure/car in the base image)
+- Switched all presets to **bottom-anchor** the wrapped text block to a 7% bottom margin (`cover.py`), dropping the title into the dark scrim at the bottom where it reads cleanly without covering the base image
+- Adapts automatically to line count — 1, 2, or 3 wrapped rows all share the same bottom margin and grow upward; verified live on the real base image for short titles and the 3-line worst case (no cut-off)
+- Color, font size, glow, and shrink-to-fit logic unchanged — only the vertical anchor moved
+
+### 96b6f9a — Fix upload modal closing mid-edit; add AI Regenerate button
+- **Date:** 2026-06-30
+- **Bug — modal disappeared while editing fields:** the backdrop click-to-close handler fired on *any* click landing on the overlay, including when you drag-select text inside a field and release the mouse past the field edge (the resulting click targets the backdrop). Now closes only when the press **started** on the backdrop too (mousedown + click both on the overlay), so text selection never closes the modal
+- **New "✨ Regenerate" button** (modal footer, left side): re-runs the AI suggestion and **overwrites** the name/description/tags with a fresh take
+- `autofillFromAI(force)` gained a `force` flag — auto-fill-on-open still only fills blank fields (never clobbers typed text), while Regenerate replaces existing content; the button shows only when AI is enabled, disables itself while generating, and refreshes the cover preview afterward
+- Touched `app.js`, `style.css` (footer spacer), and `index.html` (button markup — needs a server restart to appear)
