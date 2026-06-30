@@ -230,7 +230,11 @@ def _render_neon(base: Image.Image, title: str, text_scale: float = 1.0) -> Imag
     line_h = max(_text_height(draw, line, font) for line in lines) if lines else 0
     spacing = int(line_h * 0.18)
     total_h = line_h * len(lines) + spacing * max(len(lines) - 1, 0)
-    y0 = int(COVER_SIZE * 0.66) - total_h // 2
+    # Anchor the block near the bottom (inside the scrim) rather than
+    # centering it mid-image, so the title sits low and doesn't cover the
+    # artwork's focal point.
+    bottom_margin = int(COVER_SIZE * 0.07)
+    y0 = COVER_SIZE - bottom_margin - total_h
 
     # Cyan glow layer (blurred fat outline).
     glow = Image.new("RGBA", img.size, (0, 0, 0, 0))
@@ -268,7 +272,11 @@ def _render_chrome(base: Image.Image, title: str, text_scale: float = 1.0) -> Im
     line_h = max(_text_height(draw, line, font) for line in lines) if lines else 0
     spacing = int(line_h * 0.18)
     total_h = line_h * len(lines) + spacing * max(len(lines) - 1, 0)
-    y0 = int(COVER_SIZE * 0.66) - total_h // 2
+    # Anchor the block near the bottom (inside the scrim) rather than
+    # centering it mid-image, so the title sits low and doesn't cover the
+    # artwork's focal point.
+    bottom_margin = int(COVER_SIZE * 0.07)
+    y0 = COVER_SIZE - bottom_margin - total_h
 
     # Drop shadow (offset + blur).
     shadow = Image.new("RGBA", img.size, (0, 0, 0, 0))
@@ -316,7 +324,11 @@ def _render_outrun(base: Image.Image, title: str, text_scale: float = 1.0) -> Im
     line_h = max(_text_height(draw, line, font) for line in lines) if lines else 0
     spacing = int(line_h * 0.18)
     total_h = line_h * len(lines) + spacing * max(len(lines) - 1, 0)
-    y0 = int(COVER_SIZE * 0.62) - total_h // 2
+    # Anchor the block near the bottom (inside the scrim) rather than
+    # centering it mid-image, so the title sits low and doesn't cover the
+    # artwork's focal point.
+    bottom_margin = int(COVER_SIZE * 0.07)
+    y0 = COVER_SIZE - bottom_margin - total_h
 
     # Glow (hot magenta, blurred).
     glow = Image.new("RGBA", img.size, (0, 0, 0, 0))
