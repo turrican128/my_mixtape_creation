@@ -576,6 +576,7 @@
     const $btnCleanup = document.getElementById("btn-cleanup");
     const $btnModalClose = document.getElementById("btn-modal-close");
     const $btnModalCancel = document.getElementById("btn-modal-cancel");
+    const $btnRegenerate = document.getElementById("btn-regenerate");
     const $uploadStatus = document.getElementById("upload-status");
     const $coverPreset = document.getElementById("cover-preset");
     const $coverTextSize = document.getElementById("cover-text-size");
@@ -629,6 +630,8 @@
         // or connected Mixcloud in Settings after this page loaded.
         await checkMixcloudConnection();
         await checkCoverStatus();
+        // Show the Regenerate button only when AI is available.
+        if ($btnRegenerate) $btnRegenerate.classList.toggle("hidden", !aiEnabled);
         // Auto-fill from AI on first open per build, only if fields are empty
         if (aiEnabled && !$uploadName.value && !$uploadDescription.value && !$uploadTags.value) {
             await autofillFromAI();
@@ -693,7 +696,7 @@
         $coverPreview.src = url;
     }
 
-    async function autofillFromAI() {
+    async function autofillFromAI(force = false) {
         const prevPlaceholderName = $uploadName.placeholder;
         const prevPlaceholderDesc = $uploadDescription.placeholder;
         const prevPlaceholderTags = $uploadTags.placeholder;
@@ -703,19 +706,27 @@
         $uploadName.disabled = true;
         $uploadDescription.disabled = true;
         $uploadTags.disabled = true;
+        if ($btnRegenerate) $btnRegenerate.disabled = true;
         $uploadStatus.textContent = "✨ Generating suggestions…";
         $uploadStatus.className = "upload-status building";
         try {
+            // force=true asks for a fresh take and overwrites whatever is in
+            // the fields; force=false (auto-fill on open) only fills blanks so
+            // it never clobbers text the user already typed.
             const data = await api("/api/mixcloud/suggest", { method: "POST" });
-            if (data.name && !$uploadName.value) $uploadName.value = data.name;
-            if (data.description && !$uploadDescription.value) {
+            if (data.name && (force || !$uploadName.value)) $uploadName.value = data.name;
+            if (data.description && (force || !$uploadDescription.value)) {
                 $uploadDescription.value = data.description;
             }
-            if (Array.isArray(data.tags) && data.tags.length && !$uploadTags.value) {
+            if (Array.isArray(data.tags) && data.tags.length && (force || !$uploadTags.value)) {
                 $uploadTags.value = data.tags.join(", ");
             }
-            $uploadStatus.textContent = "✨ Suggestions filled — edit as you like, then Upload.";
+            $uploadStatus.textContent = force
+                ? "✨ Regenerated — edit as you like, then Upload."
+                : "✨ Suggestions filled — edit as you like, then Upload.";
             $uploadStatus.className = "upload-status success";
+            // Title may have changed — refresh the cover preview.
+            schedulePreviewRefresh(0);
         } catch (err) {
             $uploadStatus.textContent = `AI fill failed: ${err.message}`;
             $uploadStatus.className = "upload-status error";
@@ -726,6 +737,7 @@
             $uploadName.disabled = false;
             $uploadDescription.disabled = false;
             $uploadTags.disabled = false;
+            if ($btnRegenerate) $btnRegenerate.disabled = false;
         }
     }
 
@@ -959,9 +971,21 @@
     if ($btnCleanup) $btnCleanup.addEventListener("click", cleanupForNextMix);
     if ($btnModalClose) $btnModalClose.addEventListener("click", closeUploadModal);
     if ($btnModalCancel) $btnModalCancel.addEventListener("click", closeUploadModal);
-    if ($uploadModal) $uploadModal.addEventListener("click", (e) => {
-        if (e.target === $uploadModal) closeUploadModal();
-    });
+    if ($btnRegenerate) $btnRegenerate.addEventListener("click", () => autofillFromAI(true));
+    // Close only on a genuine backdrop click. We must require that the press
+    // STARTED on the backdrop too — otherwise selecting text inside a field
+    // and releasing the mouse past the field edge (onto the dim margin) fires
+    // a click whose target is the backdrop, closing the modal mid-edit.
+    let uploadBackdropMouseDown = false;
+    if ($uploadModal) {
+        $uploadModal.addEventListener("mousedown", (e) => {
+            uploadBackdropMouseDown = e.target === $uploadModal;
+        });
+        $uploadModal.addEventListener("click", (e) => {
+            if (e.target === $uploadModal && uploadBackdropMouseDown) closeUploadModal();
+            uploadBackdropMouseDown = false;
+        });
+    }
     // Cover preview: debounced refresh on title changes, immediate on preset / text-size change.
     if ($uploadName) $uploadName.addEventListener("input", () => schedulePreviewRefresh());
     if ($coverPreset) $coverPreset.addEventListener("change", () => schedulePreviewRefresh(0));
